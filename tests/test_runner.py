@@ -1,54 +1,41 @@
 """Tests for the subprocess runner with mocked CLI."""
 
 import asyncio
+from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
 import pytest
 
 from server import _run_railway
-
-
-@pytest.fixture
-def workspace_with_token(tmp_path):
-    """Create a workspace with a valid .env.local."""
-    (tmp_path / ".env.local").write_text("RAILWAY_TOKEN=test-token-123\n")
-    return str(tmp_path)
+from helpers import mock_railway_proc
 
 
 class TestRunRailway:
     @pytest.mark.asyncio
     async def test_returns_error_when_cli_missing(self, workspace_with_token):
         with patch("server.shutil.which", return_value=None):
-            result = await _run_railway(workspace_with_token, ["status"])
+            result = await _run_railway(str(workspace_with_token), ["status"])
         assert "error" in result
         assert "Railway CLI not found" in result["error"]
 
     @pytest.mark.asyncio
     async def test_successful_command(self, workspace_with_token):
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"service list output", b"")
-        mock_proc.returncode = 0
-
+        proc = mock_railway_proc(stdout=b"service list output")
         with (
             patch("server.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("server.asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("server.asyncio.create_subprocess_exec", return_value=proc),
         ):
-            result = await _run_railway(workspace_with_token, ["status", "--json"])
-
+            result = await _run_railway(str(workspace_with_token), ["status", "--json"])
         assert result == {"output": "service list output"}
 
     @pytest.mark.asyncio
     async def test_failed_command(self, workspace_with_token):
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"", b"not authenticated")
-        mock_proc.returncode = 1
-
+        proc = mock_railway_proc(stdout=b"", stderr=b"not authenticated", returncode=1)
         with (
             patch("server.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("server.asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("server.asyncio.create_subprocess_exec", return_value=proc),
         ):
-            result = await _run_railway(workspace_with_token, ["status"])
-
+            result = await _run_railway(str(workspace_with_token), ["status"])
         assert "error" in result
         assert "exited 1" in result["error"]
         assert result["stderr"] == "not authenticated"
@@ -59,63 +46,51 @@ class TestRunRailway:
             await asyncio.sleep(10)
             return b"", b""
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate = slow_communicate
+        proc = AsyncMock()
+        proc.communicate = slow_communicate
 
         with (
             patch("server.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("server.asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("server.asyncio.create_subprocess_exec", return_value=proc),
         ):
-            result = await _run_railway(workspace_with_token, ["logs"], timeout=0.1)
-
+            result = await _run_railway(str(workspace_with_token), ["logs"], timeout=0.1)
         assert "error" in result
         assert "timed out" in result["error"]
 
     @pytest.mark.asyncio
     async def test_injects_token_into_env(self, workspace_with_token):
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"ok", b"")
-        mock_proc.returncode = 0
-
+        proc = mock_railway_proc()
         captured_kwargs = {}
 
         async def capture_exec(*args, **kwargs):
             captured_kwargs.update(kwargs)
-            return mock_proc
+            return proc
 
         with (
             patch("server.shutil.which", return_value="/usr/local/bin/railway"),
             patch("server.asyncio.create_subprocess_exec", side_effect=capture_exec),
         ):
-            await _run_railway(workspace_with_token, ["status"])
-
+            await _run_railway(str(workspace_with_token), ["status"])
         assert captured_kwargs["env"]["RAILWAY_TOKEN"] == "test-token-123"
 
     @pytest.mark.asyncio
     async def test_sets_cwd_to_workspace(self, workspace_with_token):
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"ok", b"")
-        mock_proc.returncode = 0
-
+        proc = mock_railway_proc()
         captured_kwargs = {}
 
         async def capture_exec(*args, **kwargs):
             captured_kwargs.update(kwargs)
-            return mock_proc
+            return proc
 
         with (
             patch("server.shutil.which", return_value="/usr/local/bin/railway"),
             patch("server.asyncio.create_subprocess_exec", side_effect=capture_exec),
         ):
-            await _run_railway(workspace_with_token, ["status"])
-
-        from pathlib import Path
-
-        expected = str(Path(workspace_with_token).resolve())
+            await _run_railway(str(workspace_with_token), ["status"])
+        expected = str(Path(str(workspace_with_token)).resolve())
         assert captured_kwargs["cwd"] == expected
 
     @pytest.mark.asyncio
-    async def test_raises_on_missing_token(self, tmp_path):
-        """Workspace without .env.local should raise ValueError."""
+    async def test_raises_on_missing_token(self, workspace):
         with pytest.raises(ValueError, match="RAILWAY_TOKEN not found"):
-            await _run_railway(str(tmp_path), ["status"])
+            await _run_railway(str(workspace), ["status"])
