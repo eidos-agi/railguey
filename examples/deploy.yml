@@ -1,0 +1,33 @@
+# Railway deploy via project-scoped token — no GitHub repo linking needed.
+#
+# Setup:
+#   1. Create a project token: Railway dashboard → Project → Settings → Tokens
+#   2. Add it as a GitHub repository secret named RAILWAY_TOKEN
+#   3. Add your service name as a repository variable named RAILWAY_SERVICE
+#   4. Copy this file to .github/workflows/deploy.yml in your repo
+#
+# Why this over Railway's GitHub integration:
+#   - Railway's auto-deploy via repo linking has been unreliable (Jan–Feb 2026)
+#   - This gives you full control: run tests first, deploy on success
+#   - Works identically across every repo — no per-repo integration setup
+#   - Survives Railway webhook outages because it's just a CLI call
+
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service ${{ vars.RAILWAY_SERVICE }} --detach

@@ -70,6 +70,88 @@ This reads `/Users/you/repos/my-app/.env.local`, extracts the token, and runs:
 RAILWAY_TOKEN=<token> railway logs --service web --lines 50
 ```
 
+## The Project-Token Pattern
+
+railguey exists because of a conviction: **project-scoped tokens are the right way to manage Railway deployments.** Not user-level OAuth. Not GitHub repo linking. One token per project, used everywhere.
+
+### The problem with Railway's GitHub integration
+
+Railway offers automatic deploys by linking a GitHub repo to a service. In practice (Jan–Feb 2026), this has been unreliable — deploys silently fail, webhooks go missing, and debugging requires toggling the integration off and on. When it breaks at 2am, you're stuck in a dashboard clicking buttons.
+
+### The project-token alternative
+
+Railway lets you create [project-scoped tokens](https://docs.railway.com/guides/cli#project-tokens) — API keys that authenticate to a single project without any user login. These tokens work the same way everywhere:
+
+| Context | How the token is used |
+|---------|----------------------|
+| **Local dev** | `.env.local` — `railway logs`, `railway up`, etc. |
+| **AI agents (railguey)** | Read from `.env.local` at the workspace path |
+| **GitHub Actions CI/CD** | Repository secret → `RAILWAY_TOKEN` env var |
+| **Any CI system** | Same — export the token, run `railway up` |
+
+One mechanism. No OAuth. No repo linking. No webhook fragility.
+
+### GitHub Actions: deploy without repo linking
+
+Instead of connecting Railway to your GitHub repo, use the project token directly in a GitHub Actions workflow. This gives you full control over when and how deploys happen.
+
+Add `RAILWAY_TOKEN` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) in your GitHub repo settings, then use this workflow:
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service ${{ vars.RAILWAY_SERVICE }} --detach
+```
+
+Set `RAILWAY_SERVICE` as a [repository variable](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables) (not a secret — service names aren't sensitive).
+
+This pattern:
+- Deploys only on push to `main` (or whatever branch/event you choose)
+- Gives you the full GitHub Actions toolkit — run tests first, deploy on success, notify on failure
+- Works identically across every repo — no per-repo Railway integration setup
+- Survives Railway integration outages because it's just a CLI call
+
+### Multiple services, one repo
+
+If your repo deploys multiple Railway services (e.g. a web app and a worker):
+
+```yaml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy web
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service web --detach
+
+      - name: Deploy worker
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service worker --detach
+```
+
+Same token. Same pattern. No linking gymnastics.
+
 ## Token Discovery
 
 1. Looks for `RAILWAY_TOKEN=` in `{workspace}/.env.local`

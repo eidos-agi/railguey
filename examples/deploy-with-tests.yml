@@ -1,0 +1,46 @@
+# Railway deploy with test gate — only ships if tests pass.
+#
+# Setup:
+#   1. Create a project token: Railway dashboard → Project → Settings → Tokens
+#   2. Add it as a GitHub repository secret named RAILWAY_TOKEN
+#   3. Add your service name as a repository variable named RAILWAY_SERVICE
+#   4. Copy this file to .github/workflows/deploy.yml in your repo
+#   5. Adjust the test step for your stack (npm test, pytest, cargo test, etc.)
+
+name: Test & Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service ${{ vars.RAILWAY_SERVICE }} --detach

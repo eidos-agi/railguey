@@ -1,0 +1,30 @@
+# Railway deploy for repos that run multiple services (e.g. web + worker).
+#
+# Setup:
+#   1. Create a project token: Railway dashboard → Project → Settings → Tokens
+#   2. Add it as a GitHub repository secret named RAILWAY_TOKEN
+#   3. Copy this file to .github/workflows/deploy.yml in your repo
+#   4. Edit the service names in the deploy steps below
+
+name: Deploy to Railway (multi-service)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [web, worker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy ${{ matrix.service }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service ${{ matrix.service }} --detach
