@@ -119,6 +119,16 @@ Three ready-to-use GitHub Actions workflows in [`examples/`](examples/):
 
 ---
 
+## When repo linking is fine
+
+This document makes a strong case against repo linking, but context matters. Repo linking is genuinely convenient for:
+
+- **Hobby projects and quick demos** where a missed deploy means refreshing a dashboard, not losing revenue
+- **Solo projects with low deploy frequency** where the 5-minute GitHub Actions setup isn't worth it yet
+- **Teams evaluating Railway** that want the fastest path from "git push" to "live" before committing to CI/CD
+
+The incidents above affected production workloads at scale. If you're deploying a weekend project and Railway's integration hiccups for an hour, you probably won't notice. The case for project tokens gets stronger as the cost of a missed or broken deploy goes up — production services, client projects, anything where "it didn't deploy and nobody noticed" is a real problem.
+
 ## The bottom line
 
 Railway's GitHub integration has a documented history of outages caused by architectural issues in how it handles GitHub OAuth tokens, webhooks, and API calls. The project-token pattern sidesteps all of it by using a static token and letting GitHub Actions handle the trigger.

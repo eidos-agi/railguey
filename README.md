@@ -7,6 +7,13 @@
   Reads <code>RAILWAY_TOKEN</code> from each project's <code>.env.local</code> — no <code>railway login</code> needed.
 </p>
 
+<p align="center">
+  <a href="https://pypi.org/project/railguey/"><img src="https://img.shields.io/pypi/v/railguey" alt="PyPI"></a>
+  <a href="https://github.com/rhea-impact/railguey/actions/workflows/test.yml"><img src="https://github.com/rhea-impact/railguey/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://pypi.org/project/railguey/"><img src="https://img.shields.io/pypi/pyversions/railguey" alt="Python"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/rhea-impact/railguey" alt="License"></a>
+</p>
+
 ---
 
 ## Why
@@ -17,15 +24,49 @@ Between November 2025 and February 2026, Railway published [four incident report
 
 For the full case with incident links and architecture comparison, read **[WHY-RAILGUEY.md](WHY-RAILGUEY.md)**.
 
+## When to use railguey
+
+- You manage Railway services from AI agents (Claude Code, Cursor, etc.) and want them to deploy, rollback, and read logs without `railway login`
+- You run multiple Railway projects and want one auth pattern across local dev, CI/CD, and AI tooling
+- Deploy reliability matters — production services, client projects, anything where a silently missed deploy costs you
+- You're already using GitHub Actions and want Railway deploys in the same pipeline as your tests
+
+## When NOT to use railguey
+
+- **Quick demos and hobby projects.** Railway's repo linking is genuinely convenient for push-and-forget deploys. If you're prototyping and don't care about deploy reliability, the built-in integration is fine.
+- **You don't use an MCP client.** railguey is an MCP server — it's designed for Claude Code, Cursor, and similar tools. If you just want to deploy from the terminal, use the Railway CLI directly with a project token.
+- **You're happy with the dashboard.** If you deploy once a week and check status manually, railguey adds complexity you don't need.
+
+## Known limitations
+
+- **GraphQL tools depend on Railway's Backboard API**, which isn't officially documented. The schema could change without notice. If a GraphQL tool breaks after a Railway update, the CLI-backed tools will still work.
+- **CLI backend requires the Railway CLI** installed separately. The GraphQL tools don't need it, but you lose half the toolset without it.
+- **One token per project.** Project-scoped tokens can't query across projects. If you manage 10 projects, you need 10 `.env.local` files in 10 workspaces. This is by design (isolation), but it's more setup than a user-level login.
+
 ## Install
 
 Requires the [Railway CLI](https://docs.railway.com/guides/cli) and Python 3.10+.
+
+```bash
+pip install railguey
+```
+
+Or run without installing:
+
+```bash
+uvx railguey
+```
+
+<details>
+<summary>Install from source</summary>
 
 ```bash
 git clone https://github.com/rhea-impact/railguey.git
 cd railguey
 pip install -e .
 ```
+
+</details>
 
 ## Configure Claude Code
 
@@ -35,12 +76,28 @@ Add to `~/.claude.json` under `mcpServers`:
 {
   "mcpServers": {
     "Railway": {
-      "command": "python3",
-      "args": ["/path/to/railguey/server.py"]
+      "command": "uvx",
+      "args": ["railguey"]
     }
   }
 }
 ```
+
+<details>
+<summary>From source (development)</summary>
+
+```json
+{
+  "mcpServers": {
+    "Railway": {
+      "command": "python3",
+      "args": ["/path/to/railguey/railguey/server.py"]
+    }
+  }
+}
+```
+
+</details>
 
 ## Tools
 
