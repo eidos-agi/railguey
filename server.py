@@ -5,6 +5,13 @@ Reads RAILWAY_TOKEN from each project's .env.local so you never need
 `railway login`. Every tool takes a `workspace` path and injects the
 token into Railway CLI calls automatically.
 
+Two backends coexist:
+  - CLI: shells out to `railway` for operations that work well as commands
+  - GraphQL: hits Backboard API directly for structured data and mutations
+    the CLI doesn't expose (rollback, stop, cancel, etc.)
+
+Each tool picks whichever backend fits best. Users don't need to care.
+
 MIT licensed. FOSS under rhea-impact.
 """
 
@@ -14,6 +21,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("railguey")
@@ -21,6 +29,8 @@ mcp = FastMCP("railguey")
 # ---------------------------------------------------------------------------
 # 1. Token Discovery
 # ---------------------------------------------------------------------------
+
+BACKBOARD_URL = "https://backboard.railway.com/graphql/v2"
 
 
 def _load_token(workspace: str) -> str:
@@ -51,7 +61,7 @@ def _load_token(workspace: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 2. Subprocess Runner
+# 2a. CLI Backend
 # ---------------------------------------------------------------------------
 
 _DEFAULT_TIMEOUT = 30
@@ -102,7 +112,68 @@ async def _run_railway(
 
 
 # ---------------------------------------------------------------------------
-# 3. Tools
+# 2b. GraphQL Backend (Backboard API)
+# ---------------------------------------------------------------------------
+
+
+async def _gql(token: str, query: str, variables: dict | None = None) -> dict:
+    """Execute a GraphQL query against Railway's Backboard API.
+
+    Uses Project-Access-Token header (not Bearer) for project-scoped tokens.
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "Project-Access-Token": token,
+    }
+    payload = {"query": query}
+    if variables:
+        payload["variables"] = variables
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.post(BACKBOARD_URL, headers=headers, json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            return {"error": f"Backboard API returned {exc.response.status_code}", "body": exc.response.text}
+        except httpx.RequestError as exc:
+            return {"error": f"Request failed: {exc}"}
+
+        data = resp.json()
+        if "errors" in data:
+            return {"error": "GraphQL error", "details": data["errors"]}
+        return data.get("data", {})
+
+
+async def _resolve_project(token: str) -> dict:
+    """Introspect the project token to get projectId and environmentId."""
+    result = await _gql(token, "query { projectToken { projectId environmentId } }")
+    if "error" in result:
+        return result
+    return result.get("projectToken", {})
+
+
+async def _resolve_service_id(token: str, project_id: str, service_name: str) -> str | None:
+    """Resolve a service name to its ID within a project."""
+    query = """
+    query project($id: String!) {
+      project(id: $id) {
+        services { edges { node { id name } } }
+      }
+    }
+    """
+    result = await _gql(token, query, {"id": project_id})
+    if "error" in result:
+        return None
+    edges = result.get("project", {}).get("services", {}).get("edges", [])
+    for edge in edges:
+        node = edge.get("node", {})
+        if node.get("name", "").lower() == service_name.lower():
+            return node["id"]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 3. Tools — CLI backend
 # ---------------------------------------------------------------------------
 
 
@@ -202,17 +273,6 @@ async def railguey_services(workspace: str) -> dict:
 
 
 @mcp.tool()
-async def railguey_deployments(workspace: str, service: str) -> dict:
-    """List recent deployments for a service with IDs, statuses, and metadata.
-
-    Args:
-        workspace: Absolute path to project directory with .env.local.
-        service: Railway service name.
-    """
-    return await _run_railway(workspace, ["deployment", "list", "--service", service])
-
-
-@mcp.tool()
 async def railguey_redeploy(workspace: str, service: str) -> dict:
     """Redeploy the latest deployment of a service (rebuilds from source).
 
@@ -275,6 +335,90 @@ async def railguey_environment_create(workspace: str, name: str) -> dict:
         name: Name for the new environment (e.g. "staging", "preview").
     """
     return await _run_railway(workspace, ["environment", "new", name])
+
+
+# ---------------------------------------------------------------------------
+# 4. Tools — GraphQL backend
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def railguey_deployments(
+    workspace: str,
+    service: str,
+    limit: int = 10,
+) -> dict:
+    """List recent deployments for a service with IDs, statuses, and timestamps.
+
+    Uses the Backboard GraphQL API for structured data. No CLI needed.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+        limit: Number of deployments to return (default 10).
+    """
+    token = _load_token(workspace)
+
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    if not project_id:
+        return {"error": "Could not resolve projectId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
+    query = """
+    query deployments($input: DeploymentListInput!, $first: Int) {
+      deployments(input: $input, first: $first) {
+        edges {
+          node {
+            id
+            status
+            createdAt
+            url
+            staticUrl
+            canRedeploy
+            canRollback
+          }
+        }
+      }
+    }
+    """
+    variables = {
+        "input": {"projectId": project_id, "serviceId": service_id},
+        "first": limit,
+    }
+    result = await _gql(token, query, variables)
+    if "error" in result:
+        return result
+
+    edges = result.get("deployments", {}).get("edges", [])
+    deployments = [edge["node"] for edge in edges]
+    return {"deployments": deployments, "count": len(deployments)}
+
+
+@mcp.tool()
+async def railguey_rollback(workspace: str, service: str, deployment_id: str) -> dict:
+    """Roll back a service to a specific previous deployment.
+
+    This is a GraphQL-only operation — the Railway CLI doesn't support it.
+    Use railguey_deployments first to find the deployment ID to roll back to.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name (used for confirmation context).
+        deployment_id: The deployment ID to roll back to (from railguey_deployments).
+    """
+    token = _load_token(workspace)
+    query = """
+    mutation deploymentRollback($id: String!) {
+      deploymentRollback(id: $id) { id status }
+    }
+    """
+    return await _gql(token, query, {"id": deployment_id})
 
 
 # ---------------------------------------------------------------------------
