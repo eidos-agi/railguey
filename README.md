@@ -16,11 +16,15 @@
 
 ---
 
+**railguey is for teams and businesses that need reliable Railway deployments.** It is not the simplest way to deploy — Railway's built-in GitHub integration is simpler. But railguey is more reliable, because it draws a cleaner engineering boundary.
+
+Railway's GitHub integration asks one tool to do too much: watch for code changes, authenticate to GitHub, clone the repo, build the app, and deploy it. When it breaks — and it has broken [four times in four months](WHY-RAILGUEY.md#the-incident-timeline) — it's almost always in the watching-and-authenticating steps, not the building-and-deploying steps. railguey's opinion is that **GitHub Actions should handle CI/CD triggering** (it's GitHub watching GitHub) **and Railway should just build and deploy** (which is what it's good at). One tool per job.
+
 ## Why
 
 Between November 2025 and February 2026, Railway published [four incident reports](WHY-RAILGUEY.md#the-incident-timeline) — three directly involving the GitHub integration or deployment pipeline. The Jan 28 incident revealed Railway was burning ~82 GitHub OAuth tokens per second because it wasn't caching them. Community forums are full of deploys silently not triggering, infinite redirect loops, and repos not loading.
 
-**railguey** takes a different approach: project-scoped tokens, used everywhere. Every tool takes a `workspace` path, reads `RAILWAY_TOKEN` from `.env.local`, and authenticates directly — no OAuth, no webhooks, no GitHub integration in the chain.
+**railguey** operationalizes the fix: project-scoped tokens, used everywhere. Every tool takes a `workspace` path, reads `RAILWAY_TOKEN` from `.env.local`, and authenticates directly — no OAuth, no webhooks, no GitHub integration in the chain.
 
 For the full case with incident links and architecture comparison, read **[WHY-RAILGUEY.md](WHY-RAILGUEY.md)**.
 
