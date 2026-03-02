@@ -44,11 +44,17 @@ Add to `~/.claude.json` under `mcpServers`:
 
 | Tool | What it does |
 |------|-------------|
-| `railguey_status` | Show all services in the project |
-| `railguey_logs` | Fetch recent logs (deploy or build) |
-| `railguey_deploy` | Trigger a deploy (non-blocking) |
+| `railguey_status` | Project overview — all services and their state |
+| `railguey_services` | List services with deployment status |
+| `railguey_deployments` | Deployment history for a service (IDs, statuses, timestamps) |
+| `railguey_logs` | Fetch recent logs (deploy or build, with optional filter) |
+| `railguey_deploy` | Deploy from source (non-blocking) |
+| `railguey_redeploy` | Redeploy latest deployment (rebuilds from source) |
+| `railguey_restart` | Restart latest deployment (no rebuild, fast) |
 | `railguey_variables` | List env vars for a service |
 | `railguey_variable_set` | Set an env var (triggers redeploy) |
+| `railguey_domain` | Generate a railway.app domain or add a custom domain |
+| `railguey_environment_create` | Create a new environment (staging, preview, etc.) |
 
 Every tool requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`.
 

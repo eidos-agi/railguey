@@ -191,6 +191,92 @@ async def railguey_variable_set(
     )
 
 
+@mcp.tool()
+async def railguey_services(workspace: str) -> dict:
+    """List all services in the Railway project with deployment status.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+    """
+    return await _run_railway(workspace, ["service", "status"])
+
+
+@mcp.tool()
+async def railguey_deployments(workspace: str, service: str) -> dict:
+    """List recent deployments for a service with IDs, statuses, and metadata.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+    """
+    return await _run_railway(workspace, ["deployment", "list", "--service", service])
+
+
+@mcp.tool()
+async def railguey_redeploy(workspace: str, service: str) -> dict:
+    """Redeploy the latest deployment of a service (rebuilds from source).
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+    """
+    return await _run_railway(
+        workspace, ["redeploy", "--service", service, "--yes", "--json"]
+    )
+
+
+@mcp.tool()
+async def railguey_restart(workspace: str, service: str) -> dict:
+    """Restart the latest deployment of a service (no rebuild).
+
+    Faster than redeploy — just restarts the container.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+    """
+    return await _run_railway(
+        workspace, ["restart", "--service", service, "--yes", "--json"]
+    )
+
+
+@mcp.tool()
+async def railguey_domain(
+    workspace: str,
+    service: str,
+    domain: Optional[str] = None,
+    port: Optional[int] = None,
+) -> dict:
+    """Generate a railway.app domain or add a custom domain to a service.
+
+    If no domain is specified, generates a railway-provided domain.
+    If a custom domain is specified, returns the DNS records to configure.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+        domain: Optional custom domain (e.g. "api.example.com"). Omit to auto-generate.
+        port: Optional port to bind the domain to.
+    """
+    args = ["domain", "--service", service, "--json"]
+    if domain:
+        args.append(domain)
+    if port is not None:
+        args.extend(["--port", str(port)])
+    return await _run_railway(workspace, args)
+
+
+@mcp.tool()
+async def railguey_environment_create(workspace: str, name: str) -> dict:
+    """Create a new environment in the Railway project.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        name: Name for the new environment (e.g. "staging", "preview").
+    """
+    return await _run_railway(workspace, ["environment", "new", name])
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
