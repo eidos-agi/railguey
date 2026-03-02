@@ -63,13 +63,13 @@ If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If
 
 ## Known limitations
 
-- **GraphQL tools depend on Railway's Backboard API**, which isn't officially documented. The schema could change without notice. If a GraphQL tool breaks after a Railway update, the CLI-backed tools will still work.
-- **CLI backend requires the Railway CLI** installed separately. The GraphQL tools don't need it, but you lose half the toolset without it.
+- **All tools depend on Railway's Backboard GraphQL API**, which isn't officially documented. The schema could change without notice.
+- **No Railway CLI required.** All 17 tools use pure GraphQL with project-scoped tokens. The CLI backend module still exists for backward compatibility but is no longer used by any tool.
 - **One token per project.** Project-scoped tokens can't query across projects. If you manage 10 projects, you need 10 `.env.local` files in 10 workspaces. This is by design (isolation), but it's more setup than a user-level login.
 
 ## Install
 
-Requires the [Railway CLI](https://docs.railway.com/guides/cli) and Python 3.10+.
+Requires Python 3.10+. No Railway CLI needed.
 
 ```bash
 pip install railguey
@@ -110,28 +110,49 @@ Every command takes a `workspace` path — the directory containing `.env.local`
 
 ## Configure Claude Code (MCP)
 
+The recommended setup uses the Claude Code CLI to register railguey as a user-level MCP server:
+
+```bash
+pip install railguey
+claude mcp add --scope user railguey -- railguey serve
+```
+
+This makes railguey available in every Claude Code session, across all projects. The `--scope user` flag writes to `~/.claude.json` so it persists globally.
+
+<details>
+<summary>Manual config (alternative)</summary>
+
 Add to `~/.claude.json` under `mcpServers`:
 
 ```json
 {
   "mcpServers": {
-    "Railway": {
-      "command": "uvx",
-      "args": ["railguey", "serve"]
+    "railguey": {
+      "command": "railguey",
+      "args": ["serve"]
     }
   }
 }
 ```
 
-The `railguey serve` command starts the MCP server. The backward-compatible `railguey-mcp` entry point also works.
+</details>
 
 <details>
 <summary>From source (development)</summary>
 
+```bash
+git clone https://github.com/rhea-impact/railguey.git
+cd railguey
+pip install -e .
+claude mcp add --scope user railguey -- railguey serve
+```
+
+Or manually in `~/.claude.json`:
+
 ```json
 {
   "mcpServers": {
-    "Railway": {
+    "railguey": {
       "command": "python3",
       "args": ["-m", "railguey.mcp"]
     }
@@ -143,31 +164,24 @@ The `railguey serve` command starts the MCP server. The backward-compatible `rai
 
 ## Tools
 
-17 tools across two backends. Each tool uses whichever backend fits best — you don't need to care which.
-
-### CLI backend
+17 tools, all pure GraphQL. No Railway CLI required — just a project-scoped token.
 
 | Tool | What it does |
 |------|-------------|
-| `railguey_status` | Project overview — all services and their state |
-| `railguey_services` | List services with deployment status |
-| `railguey_logs` | Fetch recent logs (deploy or build, with optional filter) |
-| `railguey_deploy` | Deploy from source (non-blocking) |
+| `railguey_status` | Project overview — all services, deploy status, domains |
+| `railguey_services` | List services with IDs |
+| `railguey_logs` | Fetch recent deploy or build logs (with optional filter) |
+| `railguey_deploy` | Trigger a deploy from linked source |
 | `railguey_redeploy` | Redeploy latest deployment (rebuilds from source) |
 | `railguey_restart` | Restart latest deployment (no rebuild, fast) |
 | `railguey_variables` | List env vars for a service |
 | `railguey_variable_set` | Set an env var (triggers redeploy) |
 | `railguey_domain` | Generate a railway.app domain or add a custom domain |
 | `railguey_environment_create` | Create a new environment (staging, preview, etc.) |
-
-### GraphQL backend (no CLI required)
-
-| Tool | What it does |
-|------|-------------|
 | `railguey_deployments` | Deployment history with IDs, statuses, timestamps, rollback eligibility |
-| `railguey_rollback` | Roll back to a specific deployment (CLI can't do this) |
+| `railguey_rollback` | Roll back to a specific deployment |
 | `railguey_service_info` | Full service config — build/start commands, healthcheck, region, replicas |
-| `railguey_http_logs` | HTTP request logs — status codes, latency, paths (CLI can't do this) |
+| `railguey_http_logs` | HTTP request logs — status codes, latency, paths |
 | `railguey_unlink_repo` | Disconnect a service from GitHub repo linking |
 
 ### Coaching tools
