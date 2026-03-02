@@ -42,11 +42,14 @@ Add to `~/.claude.json` under `mcpServers`:
 
 ## Tools
 
+Two backends coexist — CLI and GraphQL (Backboard API). Each tool uses whichever fits best. You don't need to care.
+
+### CLI backend
+
 | Tool | What it does |
 |------|-------------|
 | `railguey_status` | Project overview — all services and their state |
 | `railguey_services` | List services with deployment status |
-| `railguey_deployments` | Deployment history for a service (IDs, statuses, timestamps) |
 | `railguey_logs` | Fetch recent logs (deploy or build, with optional filter) |
 | `railguey_deploy` | Deploy from source (non-blocking) |
 | `railguey_redeploy` | Redeploy latest deployment (rebuilds from source) |
@@ -55,6 +58,13 @@ Add to `~/.claude.json` under `mcpServers`:
 | `railguey_variable_set` | Set an env var (triggers redeploy) |
 | `railguey_domain` | Generate a railway.app domain or add a custom domain |
 | `railguey_environment_create` | Create a new environment (staging, preview, etc.) |
+
+### GraphQL backend (no CLI required)
+
+| Tool | What it does |
+|------|-------------|
+| `railguey_deployments` | Deployment history with IDs, statuses, timestamps, rollback eligibility |
+| `railguey_rollback` | Roll back to a specific deployment (CLI can't do this) |
 
 Every tool requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`.
 
