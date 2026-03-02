@@ -65,6 +65,21 @@ Two backends coexist — CLI and GraphQL (Backboard API). Each tool uses whichev
 |------|-------------|
 | `railguey_deployments` | Deployment history with IDs, statuses, timestamps, rollback eligibility |
 | `railguey_rollback` | Roll back to a specific deployment (CLI can't do this) |
+| `railguey_service_info` | Full service config — build/start commands, healthcheck, region, replicas |
+| `railguey_http_logs` | HTTP request logs — status codes, latency, paths (CLI can't do this) |
+| `railguey_unlink_repo` | Disconnect a service from GitHub repo linking (the brittle auto-deploy) |
+
+### Coaching tools
+
+| Tool | What it does |
+|------|-------------|
+| `railguey_doctor` | Audit a workspace for deployment best practices (4-point check) |
+
+`railguey_doctor` checks:
+1. `RAILWAY_TOKEN` exists in `.env.local`
+2. `.env.local` is in `.gitignore`
+3. GitHub Actions deploy workflow exists with token-based CI/CD
+4. No services linked to GitHub repos (repo linking is brittle — use CI/CD instead)
 
 Every tool requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`.
 

@@ -421,6 +421,353 @@ async def railguey_rollback(workspace: str, service: str, deployment_id: str) ->
     return await _gql(token, query, {"id": deployment_id})
 
 
+@mcp.tool()
+async def railguey_service_info(workspace: str, service: str) -> dict:
+    """Get detailed configuration for a Railway service.
+
+    Returns build command, start command, healthcheck, region, replicas,
+    restart policy, and latest deployment status. Useful for debugging
+    deploy issues or auditing service config.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
+    query = """
+    query serviceInstance($serviceId: String!, $environmentId: String!) {
+      serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+        id
+        serviceName
+        startCommand
+        buildCommand
+        rootDirectory
+        healthcheckPath
+        region
+        numReplicas
+        restartPolicyType
+        restartPolicyMaxRetries
+        latestDeployment { id status createdAt url }
+      }
+    }
+    """
+    result = await _gql(token, query, {
+        "serviceId": service_id,
+        "environmentId": environment_id,
+    })
+    if "error" in result:
+        return result
+    return result.get("serviceInstance", {})
+
+
+@mcp.tool()
+async def railguey_http_logs(
+    workspace: str,
+    service: str,
+    deployment_id: Optional[str] = None,
+    limit: int = 50,
+) -> dict:
+    """Get HTTP request logs for a service — status codes, latency, paths.
+
+    This is a GraphQL-only feature the CLI doesn't expose. Useful for
+    debugging 5xx errors, slow endpoints, or traffic patterns.
+
+    If no deployment_id is provided, fetches the latest deployment's logs.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+        deployment_id: Optional specific deployment ID. Defaults to latest.
+        limit: Number of log entries to return (default 50).
+    """
+    token = _load_token(workspace)
+
+    if not deployment_id:
+        project = await _resolve_project(token)
+        if "error" in project:
+            return project
+        project_id = project.get("projectId")
+        service_id = await _resolve_service_id(token, project_id, service)
+        if not service_id:
+            return {"error": f"Service '{service}' not found in project"}
+
+        # Get the latest deployment ID
+        dep_query = """
+        query deployments($input: DeploymentListInput!) {
+          deployments(input: $input, first: 1) {
+            edges { node { id } }
+          }
+        }
+        """
+        dep_result = await _gql(token, dep_query, {
+            "input": {"projectId": project_id, "serviceId": service_id}
+        })
+        if "error" in dep_result:
+            return dep_result
+        edges = dep_result.get("deployments", {}).get("edges", [])
+        if not edges:
+            return {"error": f"No deployments found for service '{service}'"}
+        deployment_id = edges[0]["node"]["id"]
+
+    query = """
+    query httpLogs($deploymentId: String!, $limit: Int) {
+      httpLogs(deploymentId: $deploymentId, limit: $limit) {
+        timestamp
+        requestId
+        method
+        path
+        httpStatus
+        totalDuration
+        srcIp
+      }
+    }
+    """
+    result = await _gql(token, query, {"deploymentId": deployment_id, "limit": limit})
+    if "error" in result:
+        return result
+    logs = result.get("httpLogs", [])
+    return {"logs": logs, "count": len(logs), "deployment_id": deployment_id}
+
+
+@mcp.tool()
+async def railguey_unlink_repo(workspace: str, service: str) -> dict:
+    """Disconnect a service from its linked GitHub repo.
+
+    Railway's GitHub repo linking auto-deploys on push, but has been
+    unreliable (missed webhooks, silent failures). This tool disconnects
+    the integration so you can use token-based CI/CD instead.
+
+    After unlinking, use railguey_doctor to set up GitHub Actions CI/CD.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name to disconnect from GitHub.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
+    query = """
+    mutation serviceDisconnect($id: String!) {
+      serviceDisconnect(id: $id) { id }
+    }
+    """
+    result = await _gql(token, query, {"id": service_id})
+    if "error" in result:
+        return result
+    return {
+        "disconnected": True,
+        "service": service,
+        "next_step": (
+            "GitHub repo linking removed. Deploys will no longer auto-trigger on push. "
+            "Run railguey_doctor to set up token-based GitHub Actions CI/CD instead."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 5. Doctor — opinionated workspace audit
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def railguey_doctor(workspace: str) -> dict:
+    """Audit a workspace for Railway deployment best practices.
+
+    Checks for:
+    - RAILWAY_TOKEN in .env.local (required)
+    - .env.local in .gitignore (security)
+    - GitHub Actions deploy workflow (recommended over repo linking)
+    - Whether services are linked to GitHub repos (discouraged — brittle)
+
+    Returns a structured report with findings and actionable fixes.
+
+    Args:
+        workspace: Absolute path to project directory to audit.
+    """
+    ws = Path(workspace).expanduser().resolve()
+    findings = []
+    score = 0
+    max_score = 0
+
+    # --- Check 1: RAILWAY_TOKEN exists ---
+    max_score += 1
+    has_token = False
+    try:
+        _load_token(workspace)
+        has_token = True
+        score += 1
+        findings.append({
+            "check": "RAILWAY_TOKEN",
+            "status": "pass",
+            "message": "Found in .env.local or .env",
+        })
+    except ValueError:
+        findings.append({
+            "check": "RAILWAY_TOKEN",
+            "status": "fail",
+            "message": "Not found. Add RAILWAY_TOKEN=<your-project-token> to .env.local",
+            "fix": "Get a project token from Railway dashboard → Project → Settings → Tokens",
+        })
+
+    # --- Check 2: .env.local in .gitignore ---
+    max_score += 1
+    gitignore = ws / ".gitignore"
+    env_ignored = False
+    if gitignore.is_file():
+        content = gitignore.read_text()
+        env_ignored = any(
+            line.strip() in (".env.local", ".env*", ".env.*", "*.env.local")
+            for line in content.splitlines()
+        )
+    if env_ignored:
+        score += 1
+        findings.append({
+            "check": ".gitignore",
+            "status": "pass",
+            "message": ".env.local is gitignored",
+        })
+    else:
+        findings.append({
+            "check": ".gitignore",
+            "status": "warn",
+            "message": ".env.local may not be gitignored — token could leak",
+            "fix": "Add .env.local to your .gitignore file",
+        })
+
+    # --- Check 3: GitHub Actions deploy workflow ---
+    max_score += 1
+    workflows_dir = ws / ".github" / "workflows"
+    has_deploy_workflow = False
+    if workflows_dir.is_dir():
+        for f in workflows_dir.iterdir():
+            if f.suffix in (".yml", ".yaml") and f.is_file():
+                content = f.read_text()
+                if "railway" in content.lower() and "RAILWAY_TOKEN" in content:
+                    has_deploy_workflow = True
+                    break
+    if has_deploy_workflow:
+        score += 1
+        findings.append({
+            "check": "CI/CD workflow",
+            "status": "pass",
+            "message": "GitHub Actions workflow found with RAILWAY_TOKEN",
+        })
+    else:
+        findings.append({
+            "check": "CI/CD workflow",
+            "status": "warn",
+            "message": "No GitHub Actions deploy workflow found",
+            "fix": (
+                "Add .github/workflows/deploy.yml using the project token pattern. "
+                "See: https://github.com/rhea-impact/railguey/tree/main/examples"
+            ),
+        })
+
+    # --- Check 4: GitHub repo linking (check via GraphQL if token exists) ---
+    max_score += 1
+    if has_token:
+        token = _load_token(workspace)
+        project = await _resolve_project(token)
+        if "error" not in project:
+            project_id = project.get("projectId")
+            query = """
+            query project($id: String!) {
+              project(id: $id) {
+                services {
+                  edges {
+                    node { id name }
+                  }
+                }
+              }
+            }
+            """
+            result = await _gql(token, query, {"id": project_id})
+            if "error" not in result:
+                # Check each service for source connection
+                edges = result.get("project", {}).get("services", {}).get("edges", [])
+                linked_services = []
+                for edge in edges:
+                    svc = edge.get("node", {})
+                    svc_id = svc.get("id")
+                    svc_name = svc.get("name", "unknown")
+                    # Query service details for source info
+                    svc_query = """
+                    query service($id: String!) {
+                      service(id: $id) { id name repoTriggers { repository branch } }
+                    }
+                    """
+                    svc_result = await _gql(token, svc_query, {"id": svc_id})
+                    if "error" not in svc_result:
+                        triggers = svc_result.get("service", {}).get("repoTriggers", [])
+                        if triggers:
+                            linked_services.append({
+                                "service": svc_name,
+                                "repo": triggers[0].get("repository", "unknown"),
+                            })
+
+                if linked_services:
+                    findings.append({
+                        "check": "GitHub repo linking",
+                        "status": "warn",
+                        "message": f"{len(linked_services)} service(s) linked to GitHub repos (brittle auto-deploy)",
+                        "linked": linked_services,
+                        "fix": (
+                            "Consider disconnecting with railguey_unlink_repo and using "
+                            "GitHub Actions CI/CD instead. Repo linking has been unreliable."
+                        ),
+                    })
+                else:
+                    score += 1
+                    findings.append({
+                        "check": "GitHub repo linking",
+                        "status": "pass",
+                        "message": "No services linked to GitHub repos (good — using token-based deploys)",
+                    })
+            else:
+                findings.append({
+                    "check": "GitHub repo linking",
+                    "status": "skip",
+                    "message": "Could not query project (API error)",
+                })
+        else:
+            findings.append({
+                "check": "GitHub repo linking",
+                "status": "skip",
+                "message": "Could not resolve project from token",
+            })
+    else:
+        findings.append({
+            "check": "GitHub repo linking",
+            "status": "skip",
+            "message": "No token — cannot check repo linking",
+        })
+
+    return {
+        "score": f"{score}/{max_score}",
+        "findings": findings,
+        "healthy": score == max_score,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
