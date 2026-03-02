@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from server import _gql, _resolve_project, _resolve_service_id
-from helpers import mock_httpx_response, mock_httpx_client, PROJECT_DATA, SERVICES_DATA
+from railguey.server import _gql, _resolve_project, _resolve_service_id
+from tests.helpers import mock_httpx_response, mock_httpx_client, PROJECT_DATA, SERVICES_DATA
 
 
 class TestGql:
@@ -15,7 +15,7 @@ class TestGql:
         })
         client = mock_httpx_client(resp)
 
-        with patch("server.httpx.AsyncClient", return_value=client):
+        with patch("railguey.server.httpx.AsyncClient", return_value=client):
             result = await _gql("token", "query { projectToken { projectId } }")
 
         assert result == {"projectToken": {"projectId": "proj-123", "environmentId": "env-456"}}
@@ -25,7 +25,7 @@ class TestGql:
         resp = mock_httpx_response({"errors": [{"message": "Not authorized"}]})
         client = mock_httpx_client(resp)
 
-        with patch("server.httpx.AsyncClient", return_value=client):
+        with patch("railguey.server.httpx.AsyncClient", return_value=client):
             result = await _gql("bad-token", "query { projectToken { projectId } }")
 
         assert result["error"] == "GraphQL error"
@@ -36,7 +36,7 @@ class TestGql:
         resp = mock_httpx_response({"data": {}})
         client = mock_httpx_client(resp)
 
-        with patch("server.httpx.AsyncClient", return_value=client):
+        with patch("railguey.server.httpx.AsyncClient", return_value=client):
             await _gql("my-secret-token", "query { test }")
 
         call_kwargs = client.post.call_args
@@ -49,7 +49,7 @@ class TestGql:
         resp = mock_httpx_response({"data": {"deployments": []}})
         client = mock_httpx_client(resp)
 
-        with patch("server.httpx.AsyncClient", return_value=client):
+        with patch("railguey.server.httpx.AsyncClient", return_value=client):
             await _gql("token", "query q($id: String!) { test }", {"id": "abc"})
 
         call_kwargs = client.post.call_args
@@ -60,7 +60,7 @@ class TestGql:
 class TestResolveProject:
     @pytest.mark.asyncio
     async def test_returns_project_and_env_ids(self):
-        with patch("server._gql", new_callable=AsyncMock) as mock:
+        with patch("railguey.server._gql", new_callable=AsyncMock) as mock:
             mock.return_value = {"projectToken": PROJECT_DATA}
             result = await _resolve_project("token")
         assert result["projectId"] == "proj-abc"
@@ -68,7 +68,7 @@ class TestResolveProject:
 
     @pytest.mark.asyncio
     async def test_passes_through_errors(self):
-        with patch("server._gql", new_callable=AsyncMock) as mock:
+        with patch("railguey.server._gql", new_callable=AsyncMock) as mock:
             mock.return_value = {"error": "Unauthorized"}
             result = await _resolve_project("bad-token")
         assert result == {"error": "Unauthorized"}
@@ -77,14 +77,14 @@ class TestResolveProject:
 class TestResolveServiceId:
     @pytest.mark.asyncio
     async def test_finds_service_by_name(self):
-        with patch("server._gql", new_callable=AsyncMock) as mock:
+        with patch("railguey.server._gql", new_callable=AsyncMock) as mock:
             mock.return_value = SERVICES_DATA
             result = await _resolve_service_id("token", "proj-abc", "worker")
         assert result == "svc-222"
 
     @pytest.mark.asyncio
     async def test_case_insensitive_match(self):
-        with patch("server._gql", new_callable=AsyncMock) as mock:
+        with patch("railguey.server._gql", new_callable=AsyncMock) as mock:
             mock.return_value = {
                 "project": {
                     "services": {"edges": [{"node": {"id": "svc-111", "name": "Cerebro"}}]}
@@ -95,14 +95,14 @@ class TestResolveServiceId:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_not_found(self):
-        with patch("server._gql", new_callable=AsyncMock) as mock:
+        with patch("railguey.server._gql", new_callable=AsyncMock) as mock:
             mock.return_value = SERVICES_DATA
             result = await _resolve_service_id("token", "proj-abc", "nonexistent")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_on_api_error(self):
-        with patch("server._gql", new_callable=AsyncMock) as mock:
+        with patch("railguey.server._gql", new_callable=AsyncMock) as mock:
             mock.return_value = {"error": "Something broke"}
             result = await _resolve_service_id("token", "proj-abc", "web")
         assert result is None

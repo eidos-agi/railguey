@@ -2,8 +2,8 @@
 
 import pytest
 
-from server import _load_token
-from helpers import write_file
+from railguey.server import _load_token
+from tests.helpers import write_file
 
 
 class TestLoadToken:

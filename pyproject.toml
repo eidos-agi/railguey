@@ -1,10 +1,25 @@
 [project]
 name = "railguey"
-version = "0.1.0"
+version = "0.2.0"
 description = "Project-scoped Railway MCP server — reads RAILWAY_TOKEN from .env.local, no login needed"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
+authors = [
+    { name = "Daniel Shanklin", email = "daniel@rhea-impact.com" },
+]
+keywords = ["railway", "mcp", "deploy", "devops", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.27.0",
@@ -16,9 +31,21 @@ dev = [
     "pytest-asyncio>=0.24.0",
 ]
 
+[project.scripts]
+railguey = "railguey:run"
+
+[project.urls]
+Homepage = "https://github.com/rhea-impact/railguey"
+Repository = "https://github.com/rhea-impact/railguey"
+Issues = "https://github.com/rhea-impact/railguey/issues"
+Changelog = "https://github.com/rhea-impact/railguey/blob/main/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["railguey"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

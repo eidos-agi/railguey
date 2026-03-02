@@ -32,7 +32,7 @@ skip_no_workspaces = pytest.mark.skipif(
     reason="No real workspaces with RAILWAY_TOKEN found",
 )
 
-from server import (
+from railguey.server import (
     _load_token,
     _run_railway,
     _gql,

@@ -4,15 +4,9 @@ Fixtures are auto-discovered by pytest — no import needed in test files.
 Helpers and constants live in tests/helpers.py (importable).
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 
-# Allow `from server import ...` without installing the package
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from helpers import write_file  # noqa: E402
+from tests.helpers import write_file
 
 
 # ---------------------------------------------------------------------------
