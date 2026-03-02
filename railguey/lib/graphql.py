@@ -14,7 +14,7 @@ async def _gql(token: str, query: str, variables: dict | None = None) -> dict:
         "Content-Type": "application/json",
         "Project-Access-Token": token,
     }
-    payload = {"query": query}
+    payload: dict = {"query": query}
     if variables:
         payload["variables"] = variables
 
