@@ -11,9 +11,11 @@
 
 ## Why
 
-The official Railway MCP requires `railway login` (user-level OAuth). If you manage multiple projects across different orgs, each with its own project-scoped token in `.env.local`, the official MCP can't use them.
+Between November 2025 and February 2026, Railway published [four incident reports](WHY-RAILGUEY.md#the-incident-timeline) — three directly involving the GitHub integration or deployment pipeline. The Jan 28 incident revealed Railway was burning ~82 GitHub OAuth tokens per second because it wasn't caching them. Community forums are full of deploys silently not triggering, infinite redirect loops, and repos not loading.
 
-**railguey** fixes this: every tool takes a `workspace` path, reads the token from that project's `.env.local`, and injects it into Railway CLI calls. No login. No global state. Token-per-project, the way it should work.
+**railguey** takes a different approach: project-scoped tokens, used everywhere. Every tool takes a `workspace` path, reads `RAILWAY_TOKEN` from `.env.local`, and authenticates directly — no OAuth, no webhooks, no GitHub integration in the chain.
+
+For the full case with incident links and architecture comparison, read **[WHY-RAILGUEY.md](WHY-RAILGUEY.md)**.
 
 ## Install
 
@@ -101,7 +103,7 @@ railguey exists because of a conviction: **project-scoped tokens are the right w
 
 ### The problem with Railway's GitHub integration
 
-Railway offers automatic deploys by linking a GitHub repo to a service. In practice (Jan–Feb 2026), this has been unreliable — deploys silently fail, webhooks go missing, and debugging requires toggling the integration off and on. When it breaks at 2am, you're stuck in a dashboard clicking buttons.
+Railway offers automatic deploys by linking a GitHub repo to a service. In practice, this has been [unreliable since late 2025](WHY-RAILGUEY.md#the-incident-timeline) — four public incidents in four months, community reports of deploys silently not triggering, and an architectural flaw where Railway was creating 82 OAuth tokens/second without caching. When it breaks at 2am, you're stuck in a dashboard clicking buttons.
 
 ### The project-token alternative
 
