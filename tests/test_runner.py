@@ -1,7 +1,7 @@
 """Tests for the subprocess runner with mocked CLI."""
 
 import asyncio
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 
 import pytest
 

@@ -1,23 +1,27 @@
-# railguey
+<p align="center">
+  <img src="logo.png" alt="railguey" width="500">
+</p>
 
-Project-scoped Railway MCP server. Reads `RAILWAY_TOKEN` from each project's `.env.local` — no `railway login` needed.
+<p align="center">
+  Project-scoped Railway MCP server.<br>
+  Reads <code>RAILWAY_TOKEN</code> from each project's <code>.env.local</code> — no <code>railway login</code> needed.
+</p>
+
+---
 
 ## Why
 
 The official Railway MCP requires `railway login` (user-level OAuth). If you manage multiple projects across different orgs, each with its own project-scoped token in `.env.local`, the official MCP can't use them.
 
-**railguey** fixes this: every tool takes a `workspace` path, reads the token from that project's `.env.local`, and injects it into Railway CLI calls. No login. No global state.
+**railguey** fixes this: every tool takes a `workspace` path, reads the token from that project's `.env.local`, and injects it into Railway CLI calls. No login. No global state. Token-per-project, the way it should work.
 
 ## Install
 
 Requires the [Railway CLI](https://docs.railway.com/guides/cli) and Python 3.10+.
 
 ```bash
-# Clone
 git clone https://github.com/rhea-impact/railguey.git
 cd railguey
-
-# Install
 pip install -e .
 ```
 
@@ -50,14 +54,14 @@ Every tool requires a `workspace` parameter — the absolute path to a project d
 
 ## Example
 
-```
-railguey_logs(workspace="/Users/you/repos/cerebro", service="cerebro", lines=50)
+```python
+railguey_logs(workspace="/Users/you/repos/my-app", service="web", lines=50)
 ```
 
-This reads `/Users/you/repos/cerebro/.env.local`, extracts the token, and runs:
+This reads `/Users/you/repos/my-app/.env.local`, extracts the token, and runs:
 
 ```bash
-RAILWAY_TOKEN=<token> railway logs --service cerebro --lines 50
+RAILWAY_TOKEN=<token> railway logs --service web --lines 50
 ```
 
 ## Token Discovery

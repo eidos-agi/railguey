@@ -5,7 +5,7 @@ Reads RAILWAY_TOKEN from each project's .env.local so you never need
 `railway login`. Every tool takes a `workspace` path and injects the
 token into Railway CLI calls automatically.
 
-Named out of frustration. MIT licensed. FOSS under rhea-impact.
+MIT licensed. FOSS under rhea-impact.
 """
 
 import asyncio
