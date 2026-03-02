@@ -18,10 +18,31 @@
 
 **railguey is for teams and businesses that need reliable Railway deployments.** It is not the simplest way to deploy — Railway's built-in GitHub app is simpler. But railguey is more reliable, because it draws a cleaner engineering boundary.
 
-Railway's GitHub app asks one system to watch for code changes, authenticate to GitHub, clone the repo, build, and deploy. That's five responsibilities across two platforms with different failure modes. When it breaks — and it has broken [four times in four months](WHY-RAILGUEY.md#the-incident-timeline) — it's almost always in the watching-and-authenticating steps, not the building-and-deploying steps.
+## Why not just use Railway's GitHub App?
 
-railguey's opinion: **GitHub Actions should handle CI/CD triggering** (GitHub watching GitHub), **and Railway should just build and deploy** (the thing it's good at). One tool per job. Project-scoped tokens connect them — no OAuth, no webhooks, no GitHub app in the chain.
+Railway's GitHub App is fast to set up: connect your repo, push to main, and your service deploys. For prototyping, that speed is genuinely great. But speed of setup and quality of engineering are different things.
 
+The GitHub App bundles five responsibilities into one opaque chain: watch for code changes, authenticate to GitHub, receive a webhook, clone the repo, build and deploy. When the chain works, it feels like magic. When it doesn't — and it has broken [four times in four months](WHY-RAILGUEY.md#the-incident-timeline) — there is no observability, no retry, and no notification. Your push goes in. Nothing comes out. You find out when a customer does.
+
+<p align="center">
+  <img src="docs/railway-github-app-problem.png" alt="Railway GitHub App: the fragile chain" width="600">
+</p>
+
+Every decision diamond in this diagram is a place where the chain can silently break. Missed webhooks, lost build triggers, GitHub App auth failures — all produce the same result: **nothing happens, and nobody tells you**.
+
+This isn't a bug. It's an architectural choice. Railway chose to own the entire pipeline from push to deploy, which means every failure in GitHub's webhook delivery becomes Railway's problem — and yours.
+
+## How railguey fixes this
+
+railguey separates concerns. GitHub Actions watches your repo (GitHub watching GitHub — the thing it was built for). railguey handles the deploy via Railway's API using project-scoped tokens. Railway builds and runs your service (the thing *it* was built for). Each system does one job.
+
+<p align="center">
+  <img src="docs/railguey-solution.png" alt="railguey: token-based deploy pipeline" width="700">
+</p>
+
+If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If the service is unhealthy, `railguey doctor` catches it. Every step is observable, retryable, and owned by the system best suited to do it.
+
+**Fast delivery and good engineering aren't opposites** — but Railway's GitHub App trades the second for the first. railguey gives you both.
 | Doc | What it covers |
 |-----|---------------|
 | **[WHY-NOT-RAILWAY-APP.md](WHY-NOT-RAILWAY-APP.md)** | The architectural argument — why coupling CI/CD triggering with deployment is a design flaw, not just a bug |
@@ -37,7 +58,7 @@ railguey's opinion: **GitHub Actions should handle CI/CD triggering** (GitHub wa
 ## When NOT to use railguey
 
 - **Quick demos and hobby projects.** Railway's GitHub app is genuinely convenient for push-and-forget deploys. If you're prototyping and don't care about deploy reliability, the built-in integration is fine.
-- **You don't use an MCP client.** railguey is an MCP server — it's designed for Claude Code, Cursor, and similar tools. If you just want to deploy from the terminal, use the Railway CLI directly with a project token.
+- **You don't use an MCP client or CLI.** railguey includes both an MCP server and a CLI. But if you only deploy once in a while from the terminal, the Railway CLI with a project token is enough.
 - **You're happy with the dashboard.** If you deploy once a week and check status manually, railguey adds complexity you don't need.
 
 ## Known limitations
@@ -57,7 +78,7 @@ pip install railguey
 Or run without installing:
 
 ```bash
-uvx railguey
+uvx railguey --help
 ```
 
 <details>
@@ -71,7 +92,23 @@ pip install -e .
 
 </details>
 
-## Configure Claude Code
+## CLI usage
+
+`pip install railguey` gives you the `railguey` command with all 17 tools as subcommands:
+
+```bash
+railguey status ~/repos/my-app
+railguey logs ~/repos/my-app cerebro --lines 50
+railguey deploy ~/repos/my-app web
+railguey deployments ~/repos/my-app cerebro --limit 5
+railguey doctor ~/repos/my-app
+railguey variables ~/repos/my-app web
+railguey service-info ~/repos/my-app cerebro
+```
+
+Every command takes a `workspace` path — the directory containing `.env.local` with `RAILWAY_TOKEN`.
+
+## Configure Claude Code (MCP)
 
 Add to `~/.claude.json` under `mcpServers`:
 
@@ -80,11 +117,13 @@ Add to `~/.claude.json` under `mcpServers`:
   "mcpServers": {
     "Railway": {
       "command": "uvx",
-      "args": ["railguey"]
+      "args": ["railguey", "serve"]
     }
   }
 }
 ```
+
+The `railguey serve` command starts the MCP server. The backward-compatible `railguey-mcp` entry point also works.
 
 <details>
 <summary>From source (development)</summary>
@@ -94,7 +133,7 @@ Add to `~/.claude.json` under `mcpServers`:
   "mcpServers": {
     "Railway": {
       "command": "python3",
-      "args": ["/path/to/railguey/railguey/server.py"]
+      "args": ["-m", "railguey.mcp"]
     }
   }
 }
@@ -147,11 +186,23 @@ Every tool requires a `workspace` parameter — the absolute path to a project d
 
 ## Example
 
+**CLI:**
+```bash
+railguey logs ~/repos/my-app web --lines 50
+```
+
+**MCP (via AI agent):**
 ```python
 railguey_logs(workspace="/Users/you/repos/my-app", service="web", lines=50)
 ```
 
-This reads `/Users/you/repos/my-app/.env.local`, extracts the token, and runs:
+**Python library:**
+```python
+from railguey.lib import tools
+result = await tools.logs("/Users/you/repos/my-app", "web", lines=50)
+```
+
+All three read `/Users/you/repos/my-app/.env.local`, extract the token, and run:
 
 ```bash
 RAILWAY_TOKEN=<token> railway logs --service web --lines 50

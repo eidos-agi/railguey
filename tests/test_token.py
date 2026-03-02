@@ -2,7 +2,7 @@
 
 import pytest
 
-from railguey.server import _load_token
+from railguey.lib.token import _load_token
 from tests.helpers import write_file
 
 

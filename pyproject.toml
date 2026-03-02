@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.27.0",
+    "click>=8.0.0",
 ]
 
 [project.optional-dependencies]
@@ -32,7 +33,8 @@ dev = [
 ]
 
 [project.scripts]
-railguey = "railguey:run"
+railguey = "railguey.cli:main"
+railguey-mcp = "railguey:run"
 
 [project.urls]
 Homepage = "https://github.com/rhea-impact/railguey"

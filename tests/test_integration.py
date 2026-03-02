@@ -32,19 +32,16 @@ skip_no_workspaces = pytest.mark.skipif(
     reason="No real workspaces with RAILWAY_TOKEN found",
 )
 
-from railguey.server import (
-    _load_token,
-    _run_railway,
-    _gql,
-    _resolve_project,
-    _resolve_service_id,
-    railguey_status,
-    railguey_services,
-    railguey_deployments,
-    railguey_doctor,
-    railguey_service_info,
-    railguey_logs,
-    railguey_variables,
+from railguey.lib.token import _load_token
+from railguey.lib.graphql import _gql, _resolve_project, _resolve_service_id
+from railguey.lib.tools import (
+    status,
+    services,
+    deployments,
+    doctor,
+    service_info,
+    logs,
+    variables,
 )
 
 
@@ -128,14 +125,14 @@ class TestCLIReal:
     @pytest.mark.asyncio
     async def test_status_returns_data(self):
         ws = VALID_WORKSPACES[0]
-        result = await railguey_status(ws)
+        result = await status(ws)
         assert "error" not in result, f"Status failed: {result}"
         print(f"\n  Status output length: {len(result.get('output', ''))}")
 
     @pytest.mark.asyncio
     async def test_services_returns_data(self):
         ws = VALID_WORKSPACES[0]
-        result = await railguey_services(ws)
+        result = await services(ws)
         # This might fail if no services are linked locally, which is fine
         print(f"\n  Services result: {list(result.keys())}")
 
@@ -162,7 +159,7 @@ class TestCLIReal:
             pytest.skip("No services found")
 
         service_name = services[0]["node"]["name"]
-        log_result = await railguey_logs(ws, service_name, lines=5)
+        log_result = await logs(ws, service_name, lines=5)
         print(f"\n  Logs for {service_name}: {list(log_result.keys())}")
         # Logs might be empty for services that haven't deployed, that's ok
         assert isinstance(log_result, dict)
@@ -189,7 +186,7 @@ class TestCLIReal:
             pytest.skip("No services found")
 
         service_name = services[0]["node"]["name"]
-        var_result = await railguey_variables(ws, service_name)
+        var_result = await variables(ws, service_name)
         print(f"\n  Variables for {service_name}: {list(var_result.keys())}")
         assert isinstance(var_result, dict)
 
@@ -201,7 +198,7 @@ class TestDeploymentsReal:
     @pytest.mark.asyncio
     async def test_deployments_returns_structured_data(self):
         ws = VALID_WORKSPACES[0]
-        result = await railguey_deployments(ws, service="cerebro", limit=3)
+        result = await deployments(ws, service="cerebro", limit=3)
         if "error" in result and "not found" in result["error"].lower():
             # Try to find an actual service name
             token = _load_token(ws)
@@ -217,7 +214,7 @@ class TestDeploymentsReal:
             services = svc_result.get("project", {}).get("services", {}).get("edges", [])
             if services:
                 svc_name = services[0]["node"]["name"]
-                result = await railguey_deployments(ws, service=svc_name, limit=3)
+                result = await deployments(ws, service=svc_name, limit=3)
 
         assert "error" not in result, f"Deployments failed: {result}"
         assert "deployments" in result
@@ -253,7 +250,7 @@ class TestDeploymentsReal:
                 continue
 
             svc_name = services[0]["node"]["name"]
-            dep_result = await railguey_deployments(ws, service=svc_name, limit=2)
+            dep_result = await deployments(ws, service=svc_name, limit=2)
             if "error" in dep_result:
                 results.append(f"  FAIL {name}/{svc_name}: {dep_result['error']}")
             else:
@@ -290,7 +287,7 @@ class TestServiceInfoReal:
             pytest.skip("No services found")
 
         svc_name = services[0]["node"]["name"]
-        info = await railguey_service_info(ws, svc_name)
+        info = await service_info(ws, svc_name)
         assert "error" not in info, f"Service info failed: {info}"
         print(f"\n  Service: {info.get('serviceName', '?')}")
         print(f"  Region: {info.get('region', '?')}")
@@ -309,7 +306,7 @@ class TestDoctorReal:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("workspace", VALID_WORKSPACES)
     async def test_doctor_runs_without_crashing(self, workspace):
-        result = await railguey_doctor(workspace)
+        result = await doctor(workspace)
         assert "findings" in result
         assert "score" in result
         name = Path(workspace).name
@@ -326,7 +323,7 @@ class TestDoctorReal:
         total = 0
         for ws in VALID_WORKSPACES:
             total += 1
-            result = await railguey_doctor(ws)
+            result = await doctor(ws)
             name = Path(ws).name
             if result["healthy"]:
                 healthy += 1
@@ -368,7 +365,7 @@ class TestStress:
     async def test_wrong_service_name_returns_clean_error(self):
         """Querying a nonexistent service should return a clear error, not crash."""
         ws = VALID_WORKSPACES[0]
-        result = await railguey_deployments(ws, service="this-service-does-not-exist-abc123")
+        result = await deployments(ws, service="this-service-does-not-exist-abc123")
         assert "error" in result
         assert "not found" in result["error"].lower()
 
