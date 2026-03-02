@@ -16,17 +16,16 @@
 
 ---
 
-**railguey is for teams and businesses that need reliable Railway deployments.** It is not the simplest way to deploy — Railway's built-in GitHub integration is simpler. But railguey is more reliable, because it draws a cleaner engineering boundary.
+**railguey is for teams and businesses that need reliable Railway deployments.** It is not the simplest way to deploy — Railway's built-in GitHub app is simpler. But railguey is more reliable, because it draws a cleaner engineering boundary.
 
-Railway's GitHub integration asks one tool to do too much: watch for code changes, authenticate to GitHub, clone the repo, build the app, and deploy it. When it breaks — and it has broken [four times in four months](WHY-RAILGUEY.md#the-incident-timeline) — it's almost always in the watching-and-authenticating steps, not the building-and-deploying steps. railguey's opinion is that **GitHub Actions should handle CI/CD triggering** (it's GitHub watching GitHub) **and Railway should just build and deploy** (which is what it's good at). One tool per job.
+Railway's GitHub app asks one system to watch for code changes, authenticate to GitHub, clone the repo, build, and deploy. That's five responsibilities across two platforms with different failure modes. When it breaks — and it has broken [four times in four months](WHY-RAILGUEY.md#the-incident-timeline) — it's almost always in the watching-and-authenticating steps, not the building-and-deploying steps.
 
-## Why
+railguey's opinion: **GitHub Actions should handle CI/CD triggering** (GitHub watching GitHub), **and Railway should just build and deploy** (the thing it's good at). One tool per job. Project-scoped tokens connect them — no OAuth, no webhooks, no GitHub app in the chain.
 
-Between November 2025 and February 2026, Railway published [four incident reports](WHY-RAILGUEY.md#the-incident-timeline) — three directly involving the GitHub integration or deployment pipeline. The Jan 28 incident revealed Railway was burning ~82 GitHub OAuth tokens per second because it wasn't caching them. Community forums are full of deploys silently not triggering, infinite redirect loops, and repos not loading.
-
-**railguey** operationalizes the fix: project-scoped tokens, used everywhere. Every tool takes a `workspace` path, reads `RAILWAY_TOKEN` from `.env.local`, and authenticates directly — no OAuth, no webhooks, no GitHub integration in the chain.
-
-For the full case with incident links and architecture comparison, read **[WHY-RAILGUEY.md](WHY-RAILGUEY.md)**.
+| Doc | What it covers |
+|-----|---------------|
+| **[WHY-NOT-RAILWAY-APP.md](WHY-NOT-RAILWAY-APP.md)** | The architectural argument — why coupling CI/CD triggering with deployment is a design flaw, not just a bug |
+| **[WHY-RAILGUEY.md](WHY-RAILGUEY.md)** | The evidence — four incidents, community reports, and what the project-token pattern does differently |
 
 ## When to use railguey
 
@@ -37,7 +36,7 @@ For the full case with incident links and architecture comparison, read **[WHY-R
 
 ## When NOT to use railguey
 
-- **Quick demos and hobby projects.** Railway's repo linking is genuinely convenient for push-and-forget deploys. If you're prototyping and don't care about deploy reliability, the built-in integration is fine.
+- **Quick demos and hobby projects.** Railway's GitHub app is genuinely convenient for push-and-forget deploys. If you're prototyping and don't care about deploy reliability, the built-in integration is fine.
 - **You don't use an MCP client.** railguey is an MCP server — it's designed for Claude Code, Cursor, and similar tools. If you just want to deploy from the terminal, use the Railway CLI directly with a project token.
 - **You're happy with the dashboard.** If you deploy once a week and check status manually, railguey adds complexity you don't need.
 
@@ -105,7 +104,7 @@ Add to `~/.claude.json` under `mcpServers`:
 
 ## Tools
 
-Two backends coexist — CLI and GraphQL (Backboard API). Each tool uses whichever fits best. You don't need to care.
+17 tools across two backends. Each tool uses whichever backend fits best — you don't need to care which.
 
 ### CLI backend
 
@@ -130,7 +129,7 @@ Two backends coexist — CLI and GraphQL (Backboard API). Each tool uses whichev
 | `railguey_rollback` | Roll back to a specific deployment (CLI can't do this) |
 | `railguey_service_info` | Full service config — build/start commands, healthcheck, region, replicas |
 | `railguey_http_logs` | HTTP request logs — status codes, latency, paths (CLI can't do this) |
-| `railguey_unlink_repo` | Disconnect a service from GitHub repo linking (the brittle auto-deploy) |
+| `railguey_unlink_repo` | Disconnect a service from GitHub repo linking |
 
 ### Coaching tools
 
@@ -142,7 +141,7 @@ Two backends coexist — CLI and GraphQL (Backboard API). Each tool uses whichev
 1. `RAILWAY_TOKEN` exists in `.env.local`
 2. `.env.local` is in `.gitignore`
 3. GitHub Actions deploy workflow exists with token-based CI/CD
-4. No services linked to GitHub repos (repo linking is brittle — use CI/CD instead)
+4. No services linked to GitHub repos
 
 Every tool requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`.
 
@@ -158,15 +157,7 @@ This reads `/Users/you/repos/my-app/.env.local`, extracts the token, and runs:
 RAILWAY_TOKEN=<token> railway logs --service web --lines 50
 ```
 
-## The Project-Token Pattern
-
-railguey exists because of a conviction: **project-scoped tokens are the right way to manage Railway deployments.** Not user-level OAuth. Not GitHub repo linking. One token per project, used everywhere.
-
-### The problem with Railway's GitHub integration
-
-Railway offers automatic deploys by linking a GitHub repo to a service. In practice, this has been [unreliable since late 2025](WHY-RAILGUEY.md#the-incident-timeline) — four public incidents in four months, community reports of deploys silently not triggering, and an architectural flaw where Railway was creating 82 OAuth tokens/second without caching. When it breaks at 2am, you're stuck in a dashboard clicking buttons.
-
-### The project-token alternative
+## The project-token pattern
 
 Railway lets you create [project-scoped tokens](https://docs.railway.com/guides/cli#project-tokens) — API keys that authenticate to a single project without any user login. These tokens work the same way everywhere:
 
@@ -179,11 +170,10 @@ Railway lets you create [project-scoped tokens](https://docs.railway.com/guides/
 
 One mechanism. No OAuth. No repo linking. No webhook fragility.
 
-### GitHub Actions: deploy without repo linking
+<details>
+<summary>GitHub Actions deploy workflow (copy-paste)</summary>
 
-Instead of connecting Railway to your GitHub repo, use the project token directly in a GitHub Actions workflow. This gives you full control over when and how deploys happen.
-
-Add `RAILWAY_TOKEN` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) in your GitHub repo settings, then use this workflow:
+Add `RAILWAY_TOKEN` as a [repository secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions), then:
 
 ```yaml
 # .github/workflows/deploy.yml
@@ -208,39 +198,11 @@ jobs:
         run: railway up --service ${{ vars.RAILWAY_SERVICE }} --detach
 ```
 
-Set `RAILWAY_SERVICE` as a [repository variable](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables) (not a secret — service names aren't sensitive).
+Set `RAILWAY_SERVICE` as a [repository variable](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables). More examples in [`examples/`](examples/).
 
-This pattern:
-- Deploys only on push to `main` (or whatever branch/event you choose)
-- Gives you the full GitHub Actions toolkit — run tests first, deploy on success, notify on failure
-- Works identically across every repo — no per-repo Railway integration setup
-- Survives Railway integration outages because it's just a CLI call
+</details>
 
-### Multiple services, one repo
-
-If your repo deploys multiple Railway services (e.g. a web app and a worker):
-
-```yaml
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Railway CLI
-        run: curl -fsSL https://railway.com/install.sh | sh
-
-      - name: Deploy web
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service web --detach
-
-      - name: Deploy worker
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service worker --detach
-```
-
-Same token. Same pattern. No linking gymnastics.
-
-## Token Discovery
+## Token discovery
 
 1. Looks for `RAILWAY_TOKEN=` in `{workspace}/.env.local`
 2. Falls back to `{workspace}/.env`

@@ -134,3 +134,5 @@ The incidents above affected production workloads at scale. If you're deploying 
 Railway's GitHub integration has a documented history of outages caused by architectural issues in how it handles GitHub OAuth tokens, webhooks, and API calls. The project-token pattern sidesteps all of it by using a static token and letting GitHub Actions handle the trigger.
 
 railguey encodes this pattern into every tool. It's not a workaround — it's just how deploys should work.
+
+For the deeper architectural argument — why this isn't just bugs but a design flaw — read **[WHY-NOT-RAILWAY-APP.md](WHY-NOT-RAILWAY-APP.md)**.
