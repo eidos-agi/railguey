@@ -63,13 +63,13 @@ If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If
 
 ## Known limitations
 
-- **GraphQL tools depend on Railway's Backboard API**, which isn't officially documented. The schema could change without notice. If a GraphQL tool breaks after a Railway update, the CLI-backed tools will still work.
-- **CLI backend requires the Railway CLI** installed separately. The GraphQL tools don't need it, but you lose half the toolset without it.
+- **All tools depend on Railway's Backboard GraphQL API**, which isn't officially documented. The schema could change without notice.
+- **No Railway CLI required.** All 17 tools use pure GraphQL with project-scoped tokens. The CLI backend module still exists for backward compatibility but is no longer used by any tool.
 - **One token per project.** Project-scoped tokens can't query across projects. If you manage 10 projects, you need 10 `.env.local` files in 10 workspaces. This is by design (isolation), but it's more setup than a user-level login.
 
 ## Install
 
-Requires the [Railway CLI](https://docs.railway.com/guides/cli) and Python 3.10+.
+Requires Python 3.10+. No Railway CLI needed.
 
 ```bash
 pip install railguey
@@ -164,32 +164,25 @@ Or manually in `~/.claude.json`:
 
 ## Tools
 
-17 tools across two backends. 14 use pure GraphQL (token-only, no CLI dependency). 3 require the Railway CLI for operations that don't have GraphQL equivalents.
-
-### GraphQL backend (no CLI required)
+17 tools, all pure GraphQL. No Railway CLI required — just a project-scoped token.
 
 | Tool | What it does |
 |------|-------------|
 | `railguey_status` | Project overview — all services, deploy status, domains |
 | `railguey_services` | List services with IDs |
-| `railguey_variables` | List env vars for a service |
-| `railguey_variable_set` | Set an env var (triggers redeploy) |
+| `railguey_logs` | Fetch recent deploy or build logs (with optional filter) |
+| `railguey_deploy` | Trigger a deploy from linked source |
 | `railguey_redeploy` | Redeploy latest deployment (rebuilds from source) |
 | `railguey_restart` | Restart latest deployment (no rebuild, fast) |
+| `railguey_variables` | List env vars for a service |
+| `railguey_variable_set` | Set an env var (triggers redeploy) |
+| `railguey_domain` | Generate a railway.app domain or add a custom domain |
 | `railguey_environment_create` | Create a new environment (staging, preview, etc.) |
 | `railguey_deployments` | Deployment history with IDs, statuses, timestamps, rollback eligibility |
 | `railguey_rollback` | Roll back to a specific deployment |
 | `railguey_service_info` | Full service config — build/start commands, healthcheck, region, replicas |
 | `railguey_http_logs` | HTTP request logs — status codes, latency, paths |
 | `railguey_unlink_repo` | Disconnect a service from GitHub repo linking |
-
-### CLI backend (requires Railway CLI)
-
-| Tool | What it does |
-|------|-------------|
-| `railguey_logs` | Fetch recent logs (deploy or build, with optional filter) |
-| `railguey_deploy` | Deploy from source (non-blocking) |
-| `railguey_domain` | Generate a railway.app domain or add a custom domain |
 
 ### Coaching tools
 

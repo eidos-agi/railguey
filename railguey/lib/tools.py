@@ -1,7 +1,6 @@
 """17 pure async tool functions — no framework decorators, no prefixes.
 
-Most tools use pure GraphQL (token-only, no CLI dependency). Three tools
-still require the Railway CLI: logs, deploy, and domain.
+All tools use pure GraphQL (token-only, no CLI dependency).
 
 Usage:
     from railguey.lib import tools
@@ -11,7 +10,6 @@ Usage:
 from typing import Optional
 
 from railguey.lib.token import _load_token
-from railguey.lib.cli_backend import _run_railway, _LOGS_TIMEOUT, _DEPLOY_TIMEOUT
 from railguey.lib.graphql import _gql, _resolve_project, _resolve_service_id
 from railguey.lib.doctor import doctor  # re-export so tools.doctor() still works
 
@@ -103,11 +101,6 @@ async def status(workspace: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# CLI-backed tools (require Railway CLI — no GraphQL equivalent)
-# ---------------------------------------------------------------------------
-
-
 async def logs(
     workspace: str,
     service: str,
@@ -115,26 +108,107 @@ async def logs(
     build: bool = False,
     filter: Optional[str] = None,
 ) -> dict:
-    """Fetch recent logs from a Railway service."""
-    args = ["logs", "--service", service, "--lines", str(lines)]
+    """Fetch recent logs from a Railway service.
+
+    Pure GraphQL — no CLI needed. Uses deploymentLogs or buildLogs query.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    if not project_id:
+        return {"error": "Could not resolve projectId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
+    # Find latest deployment
+    dep_query = """
+    query deployments($input: DeploymentListInput!) {
+      deployments(input: $input, first: 1) {
+        edges { node { id } }
+      }
+    }
+    """
+    dep_result = await _gql(token, dep_query, {
+        "input": {"projectId": project_id, "serviceId": service_id}
+    })
+    if "error" in dep_result:
+        return dep_result
+    edges = dep_result.get("deployments", {}).get("edges", [])
+    if not edges:
+        return {"error": f"No deployments found for service '{service}'"}
+    deployment_id = edges[0]["node"]["id"]
+
     if build:
-        args.append("--build")
+        query = """
+        query buildLogs($deploymentId: String!, $limit: Int, $filter: String) {
+          buildLogs(deploymentId: $deploymentId, limit: $limit, filter: $filter) {
+            message timestamp severity
+          }
+        }
+        """
+        result_key = "buildLogs"
+    else:
+        query = """
+        query deploymentLogs($deploymentId: String!, $limit: Int, $filter: String) {
+          deploymentLogs(deploymentId: $deploymentId, limit: $limit, filter: $filter) {
+            message timestamp severity
+          }
+        }
+        """
+        result_key = "deploymentLogs"
+
+    gql_vars: dict = {"deploymentId": deployment_id, "limit": lines}
     if filter:
-        args.extend(["--filter", filter])
-    return await _run_railway(workspace, args, timeout=_LOGS_TIMEOUT)
+        gql_vars["filter"] = filter
+
+    result = await _gql(token, query, gql_vars)
+    if "error" in result:
+        return result
+
+    entries = result.get(result_key, [])
+    return {
+        "logs": entries,
+        "count": len(entries),
+        "service": service,
+        "deploymentId": deployment_id,
+    }
 
 
 async def deploy(workspace: str, service: str) -> dict:
-    """Trigger a deploy for a Railway service (non-blocking, --detach)."""
-    return await _run_railway(
-        workspace, ["up", "--service", service, "--detach"], timeout=_DEPLOY_TIMEOUT
-    )
+    """Trigger a deploy for a Railway service.
 
+    Pure GraphQL — no CLI needed. Uses serviceInstanceRedeploy to rebuild
+    from the existing linked source (GitHub commit or previous upload).
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
 
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
 
-# ---------------------------------------------------------------------------
-# GraphQL-backed tools (continued)
-# ---------------------------------------------------------------------------
+    query = """
+    mutation serviceInstanceRedeploy($environmentId: String!, $serviceId: String!) {
+      serviceInstanceRedeploy(environmentId: $environmentId, serviceId: $serviceId)
+    }
+    """
+    result = await _gql(token, query, {
+        "environmentId": environment_id,
+        "serviceId": service_id,
+    })
+    if "error" in result:
+        return result
+    return {"deployed": True, "service": service}
 
 
 async def variables(workspace: str, service: str) -> dict:
@@ -345,13 +419,67 @@ async def domain(
     domain: Optional[str] = None,
     port: Optional[int] = None,
 ) -> dict:
-    """Generate a railway.app domain or add a custom domain to a service."""
-    args = ["domain", "--service", service, "--json"]
+    """Generate a railway.app domain or add a custom domain to a service.
+
+    Pure GraphQL — no CLI needed. If domain is provided, creates a custom
+    domain. Otherwise generates a railway.app subdomain.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
     if domain:
-        args.append(domain)
-    if port is not None:
-        args.extend(["--port", str(port)])
-    return await _run_railway(workspace, args)
+        # Custom domain
+        query = """
+        mutation customDomainCreate($input: CustomDomainCreateInput!) {
+          customDomainCreate(input: $input) { id domain }
+        }
+        """
+        input_vars: dict = {
+            "domain": domain,
+            "environmentId": environment_id,
+            "projectId": project_id,
+            "serviceId": service_id,
+        }
+        if port is not None:
+            input_vars["targetPort"] = port
+        result = await _gql(token, query, {"input": input_vars})
+        if "error" in result:
+            return result
+        created = result.get("customDomainCreate", {})
+    else:
+        # Generate railway.app domain
+        query = """
+        mutation serviceDomainCreate($input: ServiceDomainCreateInput!) {
+          serviceDomainCreate(input: $input) { id domain }
+        }
+        """
+        input_vars = {
+            "environmentId": environment_id,
+            "serviceId": service_id,
+        }
+        if port is not None:
+            input_vars["targetPort"] = port
+        result = await _gql(token, query, {"input": input_vars})
+        if "error" in result:
+            return result
+        created = result.get("serviceDomainCreate", {})
+
+    return {
+        "domain": created.get("domain", ""),
+        "id": created.get("id", ""),
+        "service": service,
+        "custom": domain is not None,
+    }
 
 
 async def environment_create(workspace: str, name: str) -> dict:
