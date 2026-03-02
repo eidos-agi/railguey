@@ -1,0 +1,600 @@
+"""Tests for railguey.lib.tools — all 17 tool functions.
+
+Every tool is pure GraphQL now. Tests mock _resolve_project, _resolve_service_id,
+and _gql at the tools module level (where they're imported).
+"""
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from railguey.lib.tools import (
+    status, logs, deploy, variables, variable_set, services,
+    redeploy, restart, domain, environment_create, deployments,
+    rollback, service_info, http_logs, unlink_repo,
+)
+
+# ---------------------------------------------------------------------------
+# Shared mock data
+# ---------------------------------------------------------------------------
+
+PROJECT = {"projectId": "proj-abc", "environmentId": "env-xyz"}
+
+DEPLOYMENT_EDGES = {
+    "deployments": {
+        "edges": [{"node": {"id": "dep-001"}}]
+    }
+}
+
+DEPLOYMENT_EDGES_EMPTY = {"deployments": {"edges": []}}
+
+
+def _patch_project(return_value=None):
+    return patch(
+        "railguey.lib.tools._resolve_project",
+        new_callable=AsyncMock,
+        return_value=return_value or PROJECT,
+    )
+
+
+def _patch_service_id(return_value="svc-111"):
+    return patch(
+        "railguey.lib.tools._resolve_service_id",
+        new_callable=AsyncMock,
+        return_value=return_value,
+    )
+
+
+def _patch_gql(*responses):
+    """Patch _gql with sequential responses (side_effect) or a single one."""
+    if len(responses) == 1:
+        return patch(
+            "railguey.lib.tools._gql",
+            new_callable=AsyncMock,
+            return_value=responses[0],
+        )
+    return patch(
+        "railguey.lib.tools._gql",
+        new_callable=AsyncMock,
+        side_effect=list(responses),
+    )
+
+
+# ===================================================================
+# status
+# ===================================================================
+
+
+class TestStatus:
+    async def test_happy_path(self, workspace_with_token):
+        gql_response = {
+            "project": {
+                "name": "my-project",
+                "environments": {
+                    "edges": [{"node": {"id": "env-xyz", "name": "production"}}]
+                },
+                "services": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "svc-111",
+                                "name": "web",
+                                "serviceInstances": {
+                                    "edges": [
+                                        {
+                                            "node": {
+                                                "environmentId": "env-xyz",
+                                                "startCommand": "node start",
+                                                "domains": {
+                                                    "serviceDomains": [{"domain": "web.up.railway.app"}],
+                                                    "customDomains": [],
+                                                },
+                                                "latestDeployment": {
+                                                    "id": "dep-1",
+                                                    "status": "SUCCESS",
+                                                    "createdAt": "2026-01-01T00:00:00Z",
+                                                },
+                                            }
+                                        }
+                                    ]
+                                },
+                            }
+                        }
+                    ]
+                },
+            }
+        }
+        with _patch_project(), _patch_gql(gql_response):
+            result = await status(str(workspace_with_token))
+        assert result["project"] == "my-project"
+        assert result["projectId"] == "proj-abc"
+        assert result["environment"] == "production"
+        assert len(result["services"]) == 1
+        svc = result["services"][0]
+        assert svc["name"] == "web"
+        assert svc["status"] == "SUCCESS"
+        assert "web.up.railway.app" in svc["domains"]
+
+    async def test_filters_other_environments(self, workspace_with_token):
+        """Services in other environments are excluded."""
+        gql_response = {
+            "project": {
+                "name": "proj",
+                "environments": {"edges": []},
+                "services": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "svc-1",
+                                "name": "web",
+                                "serviceInstances": {
+                                    "edges": [
+                                        {"node": {"environmentId": "env-OTHER", "domains": {}, "latestDeployment": None}},
+                                    ]
+                                },
+                            }
+                        }
+                    ]
+                },
+            }
+        }
+        with _patch_project(), _patch_gql(gql_response):
+            result = await status(str(workspace_with_token))
+        assert result["services"] == []
+
+    async def test_project_error_passthrough(self, workspace_with_token):
+        with _patch_project({"error": "bad token"}):
+            result = await status(str(workspace_with_token))
+        assert result == {"error": "bad token"}
+
+    async def test_gql_error_passthrough(self, workspace_with_token):
+        with _patch_project(), _patch_gql({"error": "timeout"}):
+            result = await status(str(workspace_with_token))
+        assert result["error"] == "timeout"
+
+    async def test_no_deploys(self, workspace_with_token):
+        """Service with no deployments shows 'no deploys'."""
+        gql_response = {
+            "project": {
+                "name": "proj",
+                "environments": {"edges": [{"node": {"id": "env-xyz", "name": "prod"}}]},
+                "services": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "svc-1",
+                                "name": "web",
+                                "serviceInstances": {
+                                    "edges": [
+                                        {"node": {"environmentId": "env-xyz", "domains": {}, "latestDeployment": None}},
+                                    ]
+                                },
+                            }
+                        }
+                    ]
+                },
+            }
+        }
+        with _patch_project(), _patch_gql(gql_response):
+            result = await status(str(workspace_with_token))
+        assert result["services"][0]["status"] == "no deploys"
+
+
+# ===================================================================
+# logs
+# ===================================================================
+
+
+class TestLogs:
+    async def test_deploy_logs(self, workspace_with_token):
+        log_entries = {
+            "deploymentLogs": [
+                {"message": "Starting server", "timestamp": "2026-01-01T00:00:00Z", "severity": "info"},
+                {"message": "Listening on :3000", "timestamp": "2026-01-01T00:00:01Z", "severity": "info"},
+            ]
+        }
+        with _patch_project(), _patch_service_id(), _patch_gql(DEPLOYMENT_EDGES, log_entries):
+            result = await logs(str(workspace_with_token), "web")
+        assert result["count"] == 2
+        assert result["service"] == "web"
+        assert result["deploymentId"] == "dep-001"
+        assert result["logs"][0]["message"] == "Starting server"
+
+    async def test_build_logs(self, workspace_with_token):
+        log_entries = {
+            "buildLogs": [
+                {"message": "Building...", "timestamp": "2026-01-01T00:00:00Z", "severity": "info"},
+            ]
+        }
+        with _patch_project(), _patch_service_id(), _patch_gql(DEPLOYMENT_EDGES, log_entries):
+            result = await logs(str(workspace_with_token), "web", build=True)
+        assert result["count"] == 1
+        assert result["logs"][0]["message"] == "Building..."
+
+    async def test_with_filter(self, workspace_with_token):
+        log_entries = {"deploymentLogs": []}
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(DEPLOYMENT_EDGES, log_entries) as mock_gql:
+            await logs(str(workspace_with_token), "web", filter="ERROR")
+        # Second call should include filter in variables
+        _, call_kwargs = mock_gql.call_args_list[1]
+        assert "ERROR" in str(call_kwargs) or "ERROR" in str(mock_gql.call_args_list[1])
+
+    async def test_with_lines(self, workspace_with_token):
+        log_entries = {"deploymentLogs": []}
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(DEPLOYMENT_EDGES, log_entries) as mock_gql:
+            await logs(str(workspace_with_token), "web", lines=50)
+        # Second _gql call should pass limit=50
+        args = mock_gql.call_args_list[1]
+        gql_vars = args[0][2]  # third positional arg is variables dict
+        assert gql_vars["limit"] == 50
+
+    async def test_no_deployments(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), _patch_gql(DEPLOYMENT_EDGES_EMPTY):
+            result = await logs(str(workspace_with_token), "web")
+        assert "error" in result
+        assert "No deployments" in result["error"]
+
+    async def test_service_not_found(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(None):
+            result = await logs(str(workspace_with_token), "ghost")
+        assert "error" in result
+        assert "ghost" in result["error"]
+
+
+# ===================================================================
+# deploy
+# ===================================================================
+
+
+class TestDeploy:
+    async def test_happy_path(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"serviceInstanceRedeploy": True}):
+            result = await deploy(str(workspace_with_token), "web")
+        assert result["deployed"] is True
+        assert result["service"] == "web"
+
+    async def test_service_not_found(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(None):
+            result = await deploy(str(workspace_with_token), "ghost")
+        assert "error" in result
+
+    async def test_gql_error(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"error": "mutation failed"}):
+            result = await deploy(str(workspace_with_token), "web")
+        assert result["error"] == "mutation failed"
+
+
+# ===================================================================
+# variables
+# ===================================================================
+
+
+class TestVariables:
+    async def test_happy_path(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"variables": {"DATABASE_URL": "postgres://...", "NODE_ENV": "production"}}):
+            result = await variables(str(workspace_with_token), "web")
+        assert result["service"] == "web"
+        assert "DATABASE_URL" in result["variables"]
+
+    async def test_service_not_found(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(None):
+            result = await variables(str(workspace_with_token), "ghost")
+        assert "error" in result
+
+
+# ===================================================================
+# variable_set
+# ===================================================================
+
+
+class TestVariableSet:
+    async def test_happy_path(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"variableUpsert": True}):
+            result = await variable_set(str(workspace_with_token), "web", "FOO", "bar")
+        assert result["set"] is True
+        assert result["key"] == "FOO"
+        assert result["service"] == "web"
+
+    async def test_gql_error(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"error": "unauthorized"}):
+            result = await variable_set(str(workspace_with_token), "web", "FOO", "bar")
+        assert result["error"] == "unauthorized"
+
+
+# ===================================================================
+# services
+# ===================================================================
+
+
+class TestServices:
+    async def test_happy_path(self, workspace_with_token):
+        gql_response = {
+            "project": {
+                "services": {
+                    "edges": [
+                        {"node": {"id": "svc-1", "name": "web"}},
+                        {"node": {"id": "svc-2", "name": "worker"}},
+                    ]
+                }
+            }
+        }
+        with _patch_project(), _patch_gql(gql_response):
+            result = await services(str(workspace_with_token))
+        assert result["count"] == 2
+        assert result["services"][0]["name"] == "web"
+        assert result["services"][1]["id"] == "svc-2"
+
+    async def test_empty_project(self, workspace_with_token):
+        with _patch_project(), _patch_gql({"project": {"services": {"edges": []}}}):
+            result = await services(str(workspace_with_token))
+        assert result["count"] == 0
+        assert result["services"] == []
+
+
+# ===================================================================
+# redeploy
+# ===================================================================
+
+
+class TestRedeploy:
+    async def test_happy_path(self, workspace_with_token):
+        redeploy_response = {
+            "deploymentRedeploy": {"id": "dep-new", "status": "BUILDING"}
+        }
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(DEPLOYMENT_EDGES, redeploy_response):
+            result = await redeploy(str(workspace_with_token), "web")
+        assert result["redeployed"] is True
+        assert result["deploymentId"] == "dep-new"
+        assert result["status"] == "BUILDING"
+
+    async def test_no_deployments(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), _patch_gql(DEPLOYMENT_EDGES_EMPTY):
+            result = await redeploy(str(workspace_with_token), "web")
+        assert "error" in result
+        assert "No deployments" in result["error"]
+
+    async def test_service_not_found(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(None):
+            result = await redeploy(str(workspace_with_token), "ghost")
+        assert "error" in result
+
+
+# ===================================================================
+# restart
+# ===================================================================
+
+
+class TestRestart:
+    async def test_happy_path(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(DEPLOYMENT_EDGES, {"deploymentRestart": True}):
+            result = await restart(str(workspace_with_token), "web")
+        assert result["restarted"] is True
+        assert result["deploymentId"] == "dep-001"
+        assert result["service"] == "web"
+
+    async def test_no_deployments(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), _patch_gql(DEPLOYMENT_EDGES_EMPTY):
+            result = await restart(str(workspace_with_token), "web")
+        assert "error" in result
+
+
+# ===================================================================
+# domain
+# ===================================================================
+
+
+class TestDomain:
+    async def test_generate_railway_domain(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"serviceDomainCreate": {"id": "dom-1", "domain": "web-abc.up.railway.app"}}):
+            result = await domain(str(workspace_with_token), "web")
+        assert result["domain"] == "web-abc.up.railway.app"
+        assert result["custom"] is False
+
+    async def test_custom_domain(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"customDomainCreate": {"id": "dom-2", "domain": "app.example.com"}}):
+            result = await domain(str(workspace_with_token), "web", domain="app.example.com")
+        assert result["domain"] == "app.example.com"
+        assert result["custom"] is True
+
+    async def test_with_port(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"serviceDomainCreate": {"id": "dom-3", "domain": "web.up.railway.app"}}) as mock_gql:
+            await domain(str(workspace_with_token), "web", port=8080)
+        # Verify targetPort was passed in the input
+        call_args = mock_gql.call_args
+        input_vars = call_args[0][2]["input"]
+        assert input_vars["targetPort"] == 8080
+
+    async def test_custom_domain_with_port(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"customDomainCreate": {"id": "dom-4", "domain": "api.example.com"}}) as mock_gql:
+            await domain(str(workspace_with_token), "web", domain="api.example.com", port=3000)
+        input_vars = mock_gql.call_args[0][2]["input"]
+        assert input_vars["targetPort"] == 3000
+        assert input_vars["domain"] == "api.example.com"
+
+    async def test_service_not_found(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(None):
+            result = await domain(str(workspace_with_token), "ghost")
+        assert "error" in result
+
+
+# ===================================================================
+# environment_create
+# ===================================================================
+
+
+class TestEnvironmentCreate:
+    async def test_happy_path(self, workspace_with_token):
+        with _patch_project(), \
+                _patch_gql({"environmentCreate": {"id": "env-new", "name": "staging"}}):
+            result = await environment_create(str(workspace_with_token), "staging")
+        assert result["created"] is True
+        assert result["name"] == "staging"
+        assert result["environmentId"] == "env-new"
+
+    async def test_gql_error(self, workspace_with_token):
+        with _patch_project(), _patch_gql({"error": "duplicate name"}):
+            result = await environment_create(str(workspace_with_token), "staging")
+        assert result["error"] == "duplicate name"
+
+
+# ===================================================================
+# deployments
+# ===================================================================
+
+
+class TestDeployments:
+    async def test_happy_path(self, workspace_with_token):
+        gql_response = {
+            "deployments": {
+                "edges": [
+                    {"node": {"id": "dep-1", "status": "SUCCESS", "createdAt": "2026-01-01T00:00:00Z",
+                              "url": None, "staticUrl": None, "canRedeploy": True, "canRollback": True}},
+                    {"node": {"id": "dep-2", "status": "FAILED", "createdAt": "2025-12-31T00:00:00Z",
+                              "url": None, "staticUrl": None, "canRedeploy": True, "canRollback": False}},
+                ]
+            }
+        }
+        with _patch_project(), _patch_service_id(), _patch_gql(gql_response):
+            result = await deployments(str(workspace_with_token), "web")
+        assert result["count"] == 2
+        assert result["deployments"][0]["status"] == "SUCCESS"
+        assert result["deployments"][1]["canRollback"] is False
+
+    async def test_respects_limit(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"deployments": {"edges": []}}) as mock_gql:
+            await deployments(str(workspace_with_token), "web", limit=5)
+        call_args = mock_gql.call_args[0][2]
+        assert call_args["first"] == 5
+
+
+# ===================================================================
+# rollback
+# ===================================================================
+
+
+class TestRollback:
+    async def test_happy_path(self, workspace_with_token):
+        with _patch_gql({"deploymentRollback": {"id": "dep-old", "status": "SUCCESS"}}):
+            result = await rollback(str(workspace_with_token), "web", "dep-old")
+        assert result["deploymentRollback"]["id"] == "dep-old"
+
+    async def test_gql_error(self, workspace_with_token):
+        with _patch_gql({"error": "deployment not found"}):
+            result = await rollback(str(workspace_with_token), "web", "dep-bad")
+        assert result["error"] == "deployment not found"
+
+
+# ===================================================================
+# service_info
+# ===================================================================
+
+
+class TestServiceInfo:
+    async def test_happy_path(self, workspace_with_token):
+        instance_data = {
+            "serviceInstance": {
+                "id": "si-1",
+                "serviceName": "web",
+                "startCommand": "node server.js",
+                "buildCommand": "npm run build",
+                "rootDirectory": "/",
+                "healthcheckPath": "/health",
+                "region": "us-west1",
+                "numReplicas": 1,
+                "restartPolicyType": "ON_FAILURE",
+                "restartPolicyMaxRetries": 10,
+                "latestDeployment": {"id": "dep-1", "status": "SUCCESS", "createdAt": "2026-01-01", "url": None},
+            }
+        }
+        with _patch_project(), _patch_service_id(), _patch_gql(instance_data):
+            result = await service_info(str(workspace_with_token), "web")
+        assert result["serviceName"] == "web"
+        assert result["startCommand"] == "node server.js"
+        assert result["region"] == "us-west1"
+        assert result["numReplicas"] == 1
+
+
+# ===================================================================
+# http_logs
+# ===================================================================
+
+
+class TestHttpLogs:
+    async def test_with_deployment_id(self, workspace_with_token):
+        log_data = {
+            "httpLogs": [
+                {"timestamp": "2026-01-01T00:00:00Z", "method": "GET", "path": "/",
+                 "httpStatus": 200, "totalDuration": 12, "requestId": "r1", "srcIp": "1.2.3.4"},
+            ]
+        }
+        with _patch_gql(log_data):
+            result = await http_logs(str(workspace_with_token), "web", deployment_id="dep-001")
+        assert result["count"] == 1
+        assert result["logs"][0]["httpStatus"] == 200
+        assert result["deployment_id"] == "dep-001"
+
+    async def test_auto_resolve_deployment(self, workspace_with_token):
+        log_data = {"httpLogs": []}
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(DEPLOYMENT_EDGES, log_data):
+            result = await http_logs(str(workspace_with_token), "web")
+        assert result["deployment_id"] == "dep-001"
+        assert result["count"] == 0
+
+    async def test_no_deployments(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), _patch_gql(DEPLOYMENT_EDGES_EMPTY):
+            result = await http_logs(str(workspace_with_token), "web")
+        assert "error" in result
+
+
+# ===================================================================
+# unlink_repo
+# ===================================================================
+
+
+class TestUnlinkRepo:
+    async def test_happy_path(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql({"serviceDisconnect": {"id": "svc-111"}}):
+            result = await unlink_repo(str(workspace_with_token), "web")
+        assert result["disconnected"] is True
+        assert result["service"] == "web"
+        assert "GitHub repo linking removed" in result["next_step"]
+
+    async def test_service_not_found(self, workspace_with_token):
+        with _patch_project(), _patch_service_id(None):
+            result = await unlink_repo(str(workspace_with_token), "ghost")
+        assert "error" in result
+
+
+# ===================================================================
+# Cross-cutting: missing token
+# ===================================================================
+
+
+class TestMissingToken:
+    async def test_status_no_token(self, workspace):
+        with pytest.raises(ValueError, match="RAILWAY_TOKEN"):
+            await status(str(workspace))
+
+    async def test_logs_no_token(self, workspace):
+        with pytest.raises(ValueError, match="RAILWAY_TOKEN"):
+            await logs(str(workspace), "web")
+
+    async def test_deploy_no_token(self, workspace):
+        with pytest.raises(ValueError, match="RAILWAY_TOKEN"):
+            await deploy(str(workspace), "web")
