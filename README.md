@@ -47,6 +47,7 @@ If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If
 |-----|---------------|
 | **[WHY-NOT-RAILWAY-APP.md](WHY-NOT-RAILWAY-APP.md)** | The architectural argument — why coupling CI/CD triggering with deployment is a design flaw, not just a bug |
 | **[WHY-RAILGUEY.md](WHY-RAILGUEY.md)** | The evidence — four incidents, community reports, and what the project-token pattern does differently |
+| **[WHY-RAILGUEY.md#case-study](WHY-RAILGUEY.md#case-study-ghost-repo-links-block-env-var-operations-march-2026)** | Real-world case study — ghost GitHub repo links silently blocked env var operations across 5 services |
 
 ## When to use railguey
 

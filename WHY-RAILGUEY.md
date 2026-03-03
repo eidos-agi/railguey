@@ -65,6 +65,7 @@ Every arrow is a failure point:
 | OAuth token creation | Rate limited by GitHub | Jan 28–29, 2026 |
 | GitHub API latency | Cascade failure, OOM crashes | Nov 25, 2025 |
 | Railway enforcement system | Legitimate deploys killed | Nov 20, 2025; Feb 11, 2026 |
+| Ghost repo link | Env var operations blocked | March 2026 case study (below) |
 
 That's five links in a chain, and four of them have broken publicly in the last four months.
 
@@ -87,6 +88,59 @@ Two arrows instead of five. GitHub Actions handles the webhook (its own infrastr
 | Debugging | Toggle integration off/on in dashboard | Read GitHub Actions logs |
 
 The project-token pattern doesn't just avoid Railway's GitHub integration bugs — it eliminates the entire class of failure. There's no webhook to miss, no OAuth token to rate-limit, no GitHub API to slow down.
+
+---
+
+## Case study: Ghost repo links block env var operations (March 2026)
+
+This isn't hypothetical. It happened to us while building railguey itself.
+
+### The situation
+
+A Railway project with 8 services. Five had been connected to GitHub repos at some point via Railway's GitHub App integration. The GitHub App later lost access to the `greenmark-waste-solutions` org — possibly a permission change, possibly the app was reinstalled. Nobody noticed because deploys had already moved to token-based CI/CD.
+
+### What broke
+
+Setting a simple environment variable — `NEXT_PUBLIC_SUPABASE_URL` — via the Backboard GraphQL API (`variableUpsert` mutation):
+
+```json
+{
+  "error": "GraphQL error",
+  "details": [{
+    "message": "Repository \"greenmark-waste-solutions/cerebro-qa\" not found or is not accessible"
+  }]
+}
+```
+
+**Setting an env var has nothing to do with GitHub.** But Railway's `variableUpsert` mutation validates the linked repo before writing the variable. If the GitHub App can't access the repo, the entire operation fails — even though the variable and the repo are completely unrelated.
+
+### The damage
+
+| What we tried | Result |
+|---|---|
+| `variableUpsert` via GraphQL | Blocked — "Repository not found" |
+| `serviceDisconnect` via GraphQL (project token) | Blocked — "Bad Access" (requires account-level auth) |
+| Introspect `ServiceSource` to see the link | `repo: null, image: null` — the ghost link is invisible to the API |
+
+The repo link was:
+- **Invisible** — `service_info` and `source` queries returned null
+- **Unremovable** — project-scoped tokens can't call `serviceDisconnect`
+- **Blocking unrelated operations** — env var writes, which have zero connection to GitHub
+
+The only fix was logging into the Railway dashboard with account credentials and manually disconnecting each service's GitHub source. A project-scoped token — the thing designed for automation — couldn't fix it.
+
+### The lesson
+
+Railway's GitHub repo linking doesn't just affect deploys. It injects itself into the **env var pipeline**. A broken GitHub connection doesn't just stop your deploys from triggering — it stops you from configuring your services at all.
+
+This is the strongest argument for never linking repos in the first place:
+
+1. **Deploys work without it** — token-based CI/CD via GitHub Actions
+2. **Env var operations work without it** — `variableUpsert` succeeds immediately on unlinked services
+3. **The link creates invisible coupling** — it doesn't show up in API queries but blocks API mutations
+4. **Recovery requires dashboard access** — project tokens can't clean up the mess
+
+The three services that were never linked to GitHub repos (`cerebro`, `cerebro-warp-speed`, `vault-simple`) had zero issues. Same project, same token, same API call — the only difference was the ghost repo link.
 
 ---
 
