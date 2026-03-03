@@ -142,6 +142,24 @@ This is the strongest argument for never linking repos in the first place:
 
 The three services that were never linked to GitHub repos (`cerebro`, `cerebro-warp-speed`, `vault-simple`) had zero issues. Same project, same token, same API call — the only difference was the ghost repo link.
 
+### Epilogue: the Dockerfile build-time vars trap
+
+After fixing the ghost links and setting `NEXT_PUBLIC_SUPABASE_URL` on all 8 services, cerebro's build still failed with the same `supabaseUrl is required` error. Why?
+
+Railway sets env vars on the **runtime container**, but cerebro uses a multi-stage Dockerfile. The `RUN npm run build` step runs in an isolated build stage that doesn't receive Railway's env vars. Next.js inlines `NEXT_PUBLIC_*` vars at build time via string replacement — if they don't exist during `npm run build`, they're replaced with `undefined` in the bundle.
+
+The fix was two lines in the Dockerfile:
+
+```dockerfile
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+RUN npm run build
+```
+
+Railway automatically passes env vars as Docker build args when `ARG` declarations exist. Without them, the build stage is blind to Railway's configuration.
+
+This is a general trap for any Dockerized Next.js app on Railway: **runtime env vars don't reach Docker build stages unless explicitly declared as ARG**. It compounds with the ghost repo link problem — you can't even set the vars until the links are cleared, and once you set them they still don't reach the build.
+
 ---
 
 ## What railguey does about it
