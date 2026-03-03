@@ -33,12 +33,16 @@ async def railguey_logs(
 ) -> dict:
     """Fetch recent logs from a Railway service.
 
+    TIP: Use the filter param to cut through noise. For build failures,
+    try filter="error" or filter="supabase". The filter runs server-side
+    so you only get matching lines back — much faster than scanning 100+ entries.
+
     Args:
         workspace: Absolute path to project directory with .env.local.
         service: Railway service name (e.g. "cerebro", "data-daemon").
         lines: Number of log lines to return (default 100).
         build: If True, show build logs instead of deploy logs.
-        filter: Optional string to filter log lines.
+        filter: Server-side filter string — use to narrow logs (e.g. "error", "timeout", "ECONNREFUSED").
     """
     return await tools.logs(workspace, service, lines, build, filter)
 
@@ -223,6 +227,34 @@ async def railguey_http_logs(
         limit: Number of log entries to return (default 50).
     """
     return await tools.http_logs(workspace, service, deployment_id, limit)
+
+
+@mcp.tool()
+async def railguey_deployment_logs(
+    workspace: str,
+    deployment_id: str,
+    limit: int = 100,
+    build: bool = False,
+    filter: Optional[str] = None,
+) -> dict:
+    """Get logs for a specific deployment by ID.
+
+    Use railguey_deployments to find deployment IDs first. This tool lets
+    you inspect any deployment — not just the latest — which is essential
+    when debugging across multiple environments or services.
+
+    TIP: Use the filter param to cut through noise. For build failures,
+    try filter="error" or filter="supabase". The filter runs server-side
+    so you only get matching lines back.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        deployment_id: The deployment ID (from railguey_deployments).
+        limit: Number of log lines to return (default 100).
+        build: If True, show build logs instead of deploy logs.
+        filter: Server-side filter string — use to narrow logs (e.g. "error", "timeout", "ECONNREFUSED").
+    """
+    return await tools.deployment_logs(workspace, deployment_id, limit, build, filter)
 
 
 @mcp.tool()

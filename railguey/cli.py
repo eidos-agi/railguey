@@ -162,6 +162,17 @@ def http_logs(workspace, service, deployment_id, limit):
     _output(_run(tools.http_logs(workspace, service, deployment_id, limit)))
 
 
+@main.command("deployment-logs")
+@click.argument("workspace")
+@click.argument("deployment_id")
+@click.option("--limit", default=100, help="Number of log lines to return.")
+@click.option("--build", is_flag=True, help="Show build logs instead of deploy logs.")
+@click.option("--filter", "filter_str", default=None, help="Filter log lines.")
+def deployment_logs(workspace, deployment_id, limit, build, filter_str):
+    """Get logs for a specific deployment by ID."""
+    _output(_run(tools.deployment_logs(workspace, deployment_id, limit, build, filter_str)))
+
+
 @main.command("unlink-repo")
 @click.argument("workspace")
 @click.argument("service")

@@ -92,6 +92,15 @@ class TestCLI:
         assert "KEY" in result.output
         assert "VALUE" in result.output
 
+    def test_deployment_logs_help(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["deployment-logs", "--help"])
+        assert result.exit_code == 0
+        assert "DEPLOYMENT_ID" in result.output
+        assert "--limit" in result.output
+        assert "--build" in result.output
+        assert "--filter" in result.output
+
     def test_all_commands_listed(self):
         runner = CliRunner()
         result = runner.invoke(main, ["--help"])
@@ -99,8 +108,8 @@ class TestCLI:
         expected = [
             "status", "logs", "deploy", "redeploy", "restart",
             "variables", "variable-set", "domain", "deployments",
-            "rollback", "service-info", "http-logs", "unlink-repo",
-            "environment-create", "doctor", "serve",
+            "rollback", "service-info", "http-logs", "deployment-logs",
+            "unlink-repo", "environment-create", "doctor", "serve",
         ]
         for cmd in expected:
             assert cmd in result.output, f"Missing command: {cmd}"

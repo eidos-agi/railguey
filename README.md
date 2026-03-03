@@ -182,6 +182,7 @@ Or manually in `~/.claude.json`:
 | `railguey_rollback` | Roll back to a specific deployment |
 | `railguey_service_info` | Full service config — build/start commands, healthcheck, region, replicas |
 | `railguey_http_logs` | HTTP request logs — status codes, latency, paths |
+| `railguey_deployment_logs` | Logs for a specific deployment by ID (deploy or build, with filter) |
 | `railguey_unlink_repo` | Disconnect a service from GitHub repo linking |
 
 ### Coaching tools

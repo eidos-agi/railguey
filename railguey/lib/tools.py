@@ -1,4 +1,4 @@
-"""17 pure async tool functions — no framework decorators, no prefixes.
+"""18 pure async tool functions — no framework decorators, no prefixes.
 
 All tools use pure GraphQL (token-only, no CLI dependency).
 
@@ -668,6 +668,56 @@ async def http_logs(
     return {"logs": log_entries, "count": len(log_entries), "deployment_id": deployment_id}
 
 
+async def deployment_logs(
+    workspace: str,
+    deployment_id: str,
+    limit: int = 100,
+    build: bool = False,
+    filter: Optional[str] = None,
+) -> dict:
+    """Get logs for a specific deployment by ID.
+
+    Use railguey_deployments to find deployment IDs, then this tool to
+    inspect a specific one. Useful when multiple deployments (across
+    environments or services) are interleaved.
+    """
+    token = _load_token(workspace)
+
+    if build:
+        query = """
+        query buildLogs($deploymentId: String!, $limit: Int, $filter: String) {
+          buildLogs(deploymentId: $deploymentId, limit: $limit, filter: $filter) {
+            message timestamp severity
+          }
+        }
+        """
+        result_key = "buildLogs"
+    else:
+        query = """
+        query deploymentLogs($deploymentId: String!, $limit: Int, $filter: String) {
+          deploymentLogs(deploymentId: $deploymentId, limit: $limit, filter: $filter) {
+            message timestamp severity
+          }
+        }
+        """
+        result_key = "deploymentLogs"
+
+    gql_vars: dict = {"deploymentId": deployment_id, "limit": limit}
+    if filter:
+        gql_vars["filter"] = filter
+
+    result = await _gql(token, query, gql_vars)
+    if "error" in result:
+        return result
+
+    entries = result.get(result_key, [])
+    return {
+        "logs": entries,
+        "count": len(entries),
+        "deploymentId": deployment_id,
+    }
+
+
 async def unlink_repo(workspace: str, service: str) -> dict:
     """Disconnect a service from its linked GitHub repo."""
     token = _load_token(workspace)
@@ -703,5 +753,6 @@ async def unlink_repo(workspace: str, service: str) -> dict:
 __all__ = [
     "status", "logs", "deploy", "variables", "variable_set", "services",
     "redeploy", "restart", "domain", "environment_create", "deployments",
-    "rollback", "service_info", "http_logs", "unlink_repo", "doctor",
+    "rollback", "service_info", "http_logs", "deployment_logs",
+    "unlink_repo", "doctor",
 ]

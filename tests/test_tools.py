@@ -1,4 +1,4 @@
-"""Tests for railguey.lib.tools — all 17 tool functions.
+"""Tests for railguey.lib.tools — all 18 tool functions.
 
 Every tool is pure GraphQL now. Tests mock _resolve_project, _resolve_service_id,
 and _gql at the tools module level (where they're imported).
@@ -11,7 +11,7 @@ import pytest
 from railguey.lib.tools import (
     status, logs, deploy, variables, variable_set, services,
     redeploy, restart, domain, environment_create, deployments,
-    rollback, service_info, http_logs, unlink_repo,
+    rollback, service_info, http_logs, deployment_logs, unlink_repo,
 )
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ def _patch_project(return_value=None):
     )
 
 
-def _patch_service_id(return_value="svc-111"):
+def _patch_service_id(return_value: str | None = "svc-111"):
     return patch(
         "railguey.lib.tools._resolve_service_id",
         new_callable=AsyncMock,
@@ -559,6 +559,58 @@ class TestHttpLogs:
         with _patch_project(), _patch_service_id(), _patch_gql(DEPLOYMENT_EDGES_EMPTY):
             result = await http_logs(str(workspace_with_token), "web")
         assert "error" in result
+
+
+# ===================================================================
+# deployment_logs
+# ===================================================================
+
+
+class TestDeploymentLogs:
+    async def test_deploy_logs(self, workspace_with_token):
+        log_entries = {
+            "deploymentLogs": [
+                {"message": "Starting server", "timestamp": "2026-01-01T00:00:00Z", "severity": "info"},
+                {"message": "Listening on :3000", "timestamp": "2026-01-01T00:00:01Z", "severity": "info"},
+            ]
+        }
+        with _patch_gql(log_entries):
+            result = await deployment_logs(str(workspace_with_token), "dep-123")
+        assert result["count"] == 2
+        assert result["deploymentId"] == "dep-123"
+        assert result["logs"][0]["message"] == "Starting server"
+
+    async def test_build_logs(self, workspace_with_token):
+        log_entries = {
+            "buildLogs": [
+                {"message": "Installing deps...", "timestamp": "2026-01-01T00:00:00Z", "severity": "info"},
+            ]
+        }
+        with _patch_gql(log_entries):
+            result = await deployment_logs(str(workspace_with_token), "dep-123", build=True)
+        assert result["count"] == 1
+        assert result["logs"][0]["message"] == "Installing deps..."
+
+    async def test_with_filter(self, workspace_with_token):
+        with _patch_gql({"deploymentLogs": []}) as mock_gql:
+            await deployment_logs(str(workspace_with_token), "dep-123", filter="ERROR")
+        gql_vars = mock_gql.call_args[0][2]
+        assert gql_vars["filter"] == "ERROR"
+
+    async def test_with_limit(self, workspace_with_token):
+        with _patch_gql({"deploymentLogs": []}) as mock_gql:
+            await deployment_logs(str(workspace_with_token), "dep-123", limit=25)
+        gql_vars = mock_gql.call_args[0][2]
+        assert gql_vars["limit"] == 25
+
+    async def test_gql_error(self, workspace_with_token):
+        with _patch_gql({"error": "deployment not found"}):
+            result = await deployment_logs(str(workspace_with_token), "dep-bad")
+        assert result["error"] == "deployment not found"
+
+    async def test_no_token(self, workspace):
+        with pytest.raises(ValueError, match="RAILWAY_TOKEN"):
+            await deployment_logs(str(workspace), "dep-123")
 
 
 # ===================================================================
