@@ -33,6 +33,48 @@ async def _gql(token: str, query: str, variables: dict | None = None) -> dict:
         return data.get("data", {})
 
 
+async def _gql_bearer(token: str, query: str, variables: dict | None = None) -> dict:
+    """Execute a GraphQL query using a user/account-level Bearer token.
+
+    Account tokens use Authorization: Bearer (not Project-Access-Token).
+    Required for account-level operations like creating projects.
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    payload: dict = {"query": query}
+    if variables:
+        payload["variables"] = variables
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.post(BACKBOARD_URL, headers=headers, json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            return {"error": f"Backboard API returned {exc.response.status_code}", "body": exc.response.text}
+        except httpx.RequestError as exc:
+            return {"error": f"Request failed: {exc}"}
+
+        data = resp.json()
+        if "errors" in data:
+            return {"error": "GraphQL error", "details": data["errors"]}
+        return data.get("data", {})
+
+
+def _load_user_token(account: str | None = None) -> str:
+    """Load a Railway account token.
+
+    Priority:
+    1. Named account in ~/.railguey/accounts.json
+    2. Default account in ~/.railguey/accounts.json
+    3. RAILWAY_USER_TOKEN env var
+    4. ~/.railway/config.json (CLI fallback)
+    """
+    from railguey.lib.accounts import get_account_token
+    return get_account_token(account)
+
+
 async def _resolve_project(token: str) -> dict:
     """Introspect the project token to get projectId and environmentId."""
     result = await _gql(token, "query { projectToken { projectId environmentId } }")

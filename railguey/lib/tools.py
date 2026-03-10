@@ -9,9 +9,13 @@ Usage:
 
 from typing import Optional
 
+from pathlib import Path
+
 from railguey.lib.token import _load_token
-from railguey.lib.graphql import _gql, _resolve_project, _resolve_service_id
-from railguey.lib.doctor import doctor  # re-export so tools.doctor() still works
+from railguey.lib.graphql import (
+    _gql, _gql_bearer, _resolve_project, _resolve_service_id, _load_user_token,
+)
+from railguey.lib.doctor import doctor, doctor_service_level, doctor_project_level  # re-export
 
 
 # ---------------------------------------------------------------------------
@@ -750,9 +754,277 @@ async def unlink_repo(workspace: str, service: str) -> dict:
     }
 
 
+async def list_workspaces(account: Optional[str] = None) -> dict:
+    """Discover workspace ID(s) accessible by the account token.
+
+    Works with both account-scoped and workspace-scoped tokens.
+    For workspace-scoped tokens, discovers the workspace from projects.
+    Auto-stores discovered workspace IDs in the account config.
+    """
+    from railguey.lib.accounts import set_workspace, set_default_workspace
+
+    user_token = _load_user_token(account)
+
+    # Try account-level query first (works with account-scoped tokens)
+    query = """
+    query { me { workspaces { id name } } }
+    """
+    result = await _gql_bearer(user_token, query)
+
+    if "error" not in result:
+        workspaces = result.get("me", {}).get("workspaces", [])
+        ws_list = [{"id": w["id"], "name": w["name"]} for w in workspaces]
+        # Auto-store in account config
+        acct_name = account or "(default)"
+        for w in ws_list:
+            if account:
+                set_workspace(account, w["name"], w["id"])
+        if ws_list and account:
+            set_default_workspace(account, ws_list[0]["id"])
+        return {"account": acct_name, "workspaces": ws_list}
+
+    # Fallback: workspace-scoped token — discover from projects
+    proj_query = """
+    query { projects { edges { node { workspaceId workspace { id name } } } } }
+    """
+    proj_result = await _gql_bearer(user_token, proj_query)
+    if "error" in proj_result:
+        return proj_result
+
+    edges = proj_result.get("projects", {}).get("edges", [])
+    seen = {}
+    for e in edges:
+        node = e.get("node", {})
+        ws_id = node.get("workspaceId", "")
+        ws = node.get("workspace")
+        ws_name = ws.get("name", "") if ws else ""
+        if ws_id and ws_id not in seen:
+            seen[ws_id] = ws_name or ws_id
+
+    ws_list = [{"id": k, "name": v} for k, v in seen.items()]
+
+    # Auto-store in account config
+    if account:
+        for w in ws_list:
+            set_workspace(account, w["name"], w["id"])
+        if ws_list:
+            set_default_workspace(account, ws_list[0]["id"])
+
+    return {"account": account or "(default)", "workspaces": ws_list}
+
+
+async def project_create(
+    name: str,
+    team_id: str,
+    workspace: Optional[str] = None,
+    account: Optional[str] = None,
+) -> dict:
+    """Create a new Railway project in a specific team/workspace.
+
+    REQUIRES team_id — will never create a project in the default/personal
+    workspace by accident. Use list_workspaces() to find available teams.
+
+    Args:
+        name: Project name.
+        team_id: Railway workspace/team ID (REQUIRED). Use list_workspaces() to find it.
+        workspace: Local directory path. If provided, writes RAILWAY_TOKEN to .env.local.
+        account: Named account from ~/.railguey/accounts.json. Uses default if not set.
+
+    Returns the projectId, default environmentId, and a project token.
+    """
+    if not team_id:
+        return {
+            "error": "team_id is required. Use railguey_workspaces to list available "
+                     "teams, then pass the team ID. Railguey never creates projects "
+                     "without an explicit team to prevent accidental personal-account deploys."
+        }
+
+    user_token = _load_user_token(account)
+
+    # Step 1: Create the project in the specified team
+    create_query = """
+    mutation projectCreate($input: ProjectCreateInput!) {
+      projectCreate(input: $input) {
+        id
+        name
+        environments { edges { node { id name } } }
+      }
+    }
+    """
+    result = await _gql_bearer(user_token, create_query, {
+        "input": {"name": name, "workspaceId": team_id}
+    })
+    if "error" in result:
+        return result
+
+    project = result.get("projectCreate", {})
+    project_id = project.get("id", "")
+    envs = project.get("environments", {}).get("edges", [])
+    env_id = envs[0]["node"]["id"] if envs else ""
+    env_name = envs[0]["node"]["name"] if envs else "production"
+
+    if not project_id:
+        return {"error": "Project created but no ID returned", "raw": result}
+
+    # Step 2: Create a project token for ongoing access
+    token_query = """
+    mutation projectTokenCreate($input: ProjectTokenCreateInput!) {
+      projectTokenCreate(input: $input)
+    }
+    """
+    token_result = await _gql_bearer(user_token, token_query, {
+        "input": {
+            "projectId": project_id,
+            "environmentId": env_id,
+            "name": f"railguey-{name}",
+        }
+    })
+    project_token = ""
+    if "error" not in token_result:
+        project_token = token_result.get("projectTokenCreate", "")
+
+    # Step 3: Write .env.local if workspace provided and token obtained
+    env_local_written = False
+    if workspace and project_token:
+        ws = Path(workspace).expanduser().resolve()
+        env_local = ws / ".env.local"
+        env_local.write_text(f"RAILWAY_TOKEN={project_token}\n")
+        env_local_written = True
+
+    return {
+        "created": True,
+        "projectId": project_id,
+        "projectName": project.get("name", name),
+        "teamId": team_id,
+        "environmentId": env_id,
+        "environmentName": env_name,
+        "projectToken": project_token or "(failed to create — create manually in Railway dashboard)",
+        "envLocalWritten": env_local_written,
+        "workspace": workspace or "(not specified)",
+    }
+
+
+async def service_create(
+    workspace: str,
+    name: str,
+) -> dict:
+    """Create a new empty service in a Railway project.
+
+    Uses the project-scoped token from workspace/.env.local.
+    After creation, the service exists but has no deployments —
+    use railguey_deploy or link a GitHub repo to trigger the first build.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    if not project_id:
+        return {"error": "Could not resolve projectId from token"}
+
+    query = """
+    mutation serviceCreate($input: ServiceCreateInput!) {
+      serviceCreate(input: $input) { id name }
+    }
+    """
+    result = await _gql(token, query, {
+        "input": {"name": name, "projectId": project_id}
+    })
+    if "error" in result:
+        return result
+
+    svc = result.get("serviceCreate", {})
+    return {
+        "created": True,
+        "serviceId": svc.get("id", ""),
+        "serviceName": svc.get("name", name),
+        "projectId": project_id,
+    }
+
+
+async def list_projects(
+    team_id: str,
+    account: Optional[str] = None,
+) -> dict:
+    """List all projects in a workspace/team.
+
+    Args:
+        team_id: Railway workspace/team ID.
+        account: Named account (uses default if not set).
+    """
+    user_token = _load_user_token(account)
+    query = """
+    query workspace($id: String!) {
+      workspace(id: $id) {
+        name
+        projects { edges { node { id name updatedAt } } }
+      }
+    }
+    """
+    result = await _gql_bearer(user_token, query, {"id": team_id})
+    if "error" in result:
+        return result
+
+    ws = result.get("workspace", {})
+    edges = ws.get("projects", {}).get("edges", [])
+    projects = [
+        {"id": e["node"]["id"], "name": e["node"]["name"], "updatedAt": e["node"].get("updatedAt", "")}
+        for e in edges
+    ]
+    return {"workspace": ws.get("name", ""), "teamId": team_id, "projects": projects}
+
+
+async def project_delete(
+    project_id: str,
+    account: Optional[str] = None,
+) -> dict:
+    """Delete a Railway project. Irreversible.
+
+    Args:
+        project_id: Railway project ID to delete.
+        account: Named account (uses default if not set).
+    """
+    user_token = _load_user_token(account)
+    query = """
+    mutation projectDelete($id: String!) {
+      projectDelete(id: $id)
+    }
+    """
+    result = await _gql_bearer(user_token, query, {"id": project_id})
+    if "error" in result:
+        return result
+    return {"deleted": True, "projectId": project_id}
+
+
+async def project_transfer(
+    project_id: str,
+    target_team_id: str,
+    account: Optional[str] = None,
+) -> dict:
+    """Transfer a project to a different team/workspace.
+
+    Args:
+        project_id: Railway project ID to transfer.
+        target_team_id: Destination workspace/team ID.
+        account: Named account (uses default if not set).
+    """
+    user_token = _load_user_token(account)
+    query = """
+    mutation projectTransferToTeam($id: String!, $teamId: String!) {
+      projectTransferToTeam(id: $id, teamId: $teamId) { id name }
+    }
+    """
+    result = await _gql_bearer(user_token, query, {"id": project_id, "teamId": target_team_id})
+    if "error" in result:
+        return result
+    proj = result.get("projectTransferToTeam", {})
+    return {"transferred": True, "projectId": proj.get("id", project_id), "targetTeamId": target_team_id}
+
+
 __all__ = [
     "status", "logs", "deploy", "variables", "variable_set", "services",
     "redeploy", "restart", "domain", "environment_create", "deployments",
     "rollback", "service_info", "http_logs", "deployment_logs",
-    "unlink_repo", "doctor",
+    "unlink_repo", "doctor", "project_create", "service_create",
+    "list_workspaces", "list_projects", "project_delete", "project_transfer",
 ]
