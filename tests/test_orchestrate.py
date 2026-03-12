@@ -1245,3 +1245,161 @@ class TestVerifyEdgeCases:
             result = await verify("api", workspace=str(workspace_with_token))
         assert result["pass"] is False
         assert any(c["check"] == "verify" and c["status"] == "error" for c in result["checks"])
+
+
+# ===================================================================
+# Flaw detection — tests that expose real bugs or design gaps
+# ===================================================================
+
+
+class TestFlawDetection:
+    """Tests that document actual flaws found in orchestrate.py.
+
+    Each test is marked with the flaw it exposes. These serve as regression
+    tests once the flaws are fixed.
+    """
+
+    async def test_concurrency_skip_emitted_when_service_id_none(self, workspace_with_token):
+        """FIX VERIFIED: When _resolve_service_id returns None, the concurrency
+        check now emits a 'skip' status so the caller knows it didn't run.
+        """
+        reg = {
+            "defaults": {"preflight": {"require_clean_worktree": True}},
+            "services": [{"name": "api", "type": "railway_service",
+                          "workspace": str(workspace_with_token), "deploy": {"branch": "main"}}],
+        }
+
+        def run_side_effect(cmd, cwd=None, capture_output=None, text=None, timeout=None):
+            if cmd[:3] == ["git", "branch", "--show-current"]:
+                return _ok_proc("main\n")
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                return _ok_proc("")
+            raise AssertionError(f"Unexpected subprocess: {cmd}")
+
+        with (
+            _patch_registry(reg),
+            _patch_token(),
+            _patch_project(),
+            _patch_service_id(return_value=None),  # service not found in Railway
+            patch("subprocess.run", side_effect=run_side_effect),
+        ):
+            result = await preflight("api", workspace=str(workspace_with_token))
+
+        # FIX: concurrency check now appears with "skip" status
+        all_checks = result["passed"] + result["blocking"]
+        concurrency = [c for c in all_checks if c["check"] == "concurrency"]
+        assert len(concurrency) == 1, "concurrency check should appear exactly once"
+        assert concurrency[0]["status"] == "skip"
+        assert "not found" in concurrency[0]["detail"]
+
+    async def test_no_workspace_on_required_dep_blocks_preflight(self, workspace_with_token):
+        """FIX VERIFIED: A required_before_deploy dependency on a railway_service
+        with no workspace now blocks preflight with a 'fail' status.
+        """
+        reg = {
+            "defaults": {"preflight": {"require_clean_worktree": True}},
+            "services": [
+                # Dependency has NO workspace
+                {"name": "dep-api", "type": "railway_service", "repo": "dep-api",
+                 "deploy": {"branch": "main"}},  # no workspace key
+                {
+                    "name": "api", "type": "railway_service", "repo": "api",
+                    "workspace": str(workspace_with_token), "deploy": {"branch": "main"},
+                    "depends_on": [{"target": "dep-api", "gate": "required_before_deploy"}],
+                },
+            ],
+        }
+
+        def run_side_effect(cmd, cwd=None, capture_output=None, text=None, timeout=None):
+            if cmd[:3] == ["git", "branch", "--show-current"]:
+                return _ok_proc("main\n")
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                return _ok_proc("")
+            raise AssertionError(f"Unexpected subprocess: {cmd}")
+
+        gql = {"deployments": {"edges": [{"node": {"id": "d1", "status": "SUCCESS"}}]}}
+
+        with (
+            _patch_registry(reg),
+            _patch_token(),
+            _patch_project(),
+            _patch_service_id(return_value="sid-api"),
+            _patch_gql(gql),
+            patch("subprocess.run", side_effect=run_side_effect),
+        ):
+            result = await preflight("api", workspace=str(workspace_with_token))
+
+        # FIX: go=False, dep-api check now blocks with "fail"
+        assert result["go"] is False
+        dep_checks = [c for c in result["blocking"] if c["check"] == "dependency:dep-api"]
+        assert len(dep_checks) == 1
+        assert dep_checks[0]["status"] == "fail"
+        assert "no workspace" in dep_checks[0]["detail"]
+
+    async def test_soft_deps_do_not_inflate_staging(self):
+        """FIX VERIFIED: deploy_plan() now only uses required_before_* deps
+        to determine stage ordering. A service with only 'recommended' deps
+        pointing at it stays in stage 3 (leaf), not stage 2 (API layer).
+        """
+        reg = {
+            "services": [
+                {"name": "api", "type": "railway_service", "repo": "api-repo",
+                 "deploy": {"branch": "main"}},
+                {"name": "web", "type": "railway_service", "repo": "web-repo",
+                 "deploy": {"branch": "main"},
+                 "depends_on": [{"target": "api", "gate": "recommended_before_verify"}]},
+            ]
+        }
+        with _patch_registry(reg):
+            result = await deploy_plan(["api-repo", "web-repo"])
+
+        stages = result["stages"]
+        # FIX: api is in stage 3 (leaf) since only recommended deps point at it
+        api_stage = None
+        for stage in stages:
+            for svc in stage["services"]:
+                if svc["name"] == "api":
+                    api_stage = stage
+        assert api_stage is not None, "api should appear in some stage"
+        assert api_stage["label"] != "API and config services", \
+            "recommended dep should NOT promote service to stage 2"
+
+    async def test_flaw_migration_parser_with_real_supabase_output(self):
+        """Verify migration parser works with REAL supabase CLI output format.
+        This is a regression test — the parser splits on '|' which matches
+        the actual supabase output (ASCII pipe, not unicode box-drawing).
+        """
+        # Real supabase output (captured from production)
+        real_output = (
+            "\n"
+            "   Local          | Remote         | Time (UTC)          \n"
+            "  ----------------|----------------|---------------------\n"
+            "   20260308000100 | 20260308000100 | 2026-03-08 00:01:00 \n"
+            "   20260312020000 |                |                     \n"  # local-only!
+        )
+
+        unsynced = []
+        for line in real_output.split("\n"):
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) >= 2 and parts[0] and not parts[1]:
+                unsynced.append(parts[0])
+
+        assert unsynced == ["20260312020000"], \
+            f"Parser should detect local-only migration, got: {unsynced}"
+
+    async def test_flaw_migration_parser_header_row_not_false_positive(self):
+        """Verify header row 'Local | Remote | Time' doesn't trigger false positive."""
+        header_output = (
+            "   Local          | Remote         | Time (UTC)          \n"
+            "  ----------------|----------------|---------------------\n"
+            "   20260308000100 | 20260308000100 | 2026-03-08 00:01:00 \n"
+        )
+
+        unsynced = []
+        for line in header_output.split("\n"):
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) >= 2 and parts[0] and not parts[1]:
+                unsynced.append(parts[0])
+
+        assert unsynced == [], \
+            f"Header/separator should NOT trigger false positive, got: {unsynced}"

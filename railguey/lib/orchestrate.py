@@ -167,6 +167,9 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
                         else:
                             checks.append({"check": "concurrency", "status": "pass",
                                            "detail": f"No active deploy (last: {latest_status})"})
+                else:
+                    checks.append({"check": "concurrency", "status": "skip",
+                                   "detail": f"Service '{service}' not found in Railway project"})
         except Exception as e:
             checks.append({"check": "concurrency", "status": "skip", "detail": str(e)})
 
@@ -213,7 +216,10 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
         # For Railway services: check latest deploy is SUCCESS
         elif target_svc.get("type") == "railway_service":
             target_ws = _expand_home(target_svc.get("workspace"))
-            if target_ws:
+            if not target_ws:
+                blocking.append({"check": f"dependency:{target_name}", "status": "fail",
+                                 "detail": f"Required dependency '{target_name}' has no workspace configured"})
+            else:
                 try:
                     token = _load_token(target_ws)
                     project = await _resolve_project(token)
@@ -519,10 +525,12 @@ async def deploy_plan(repos: list[str]) -> dict:
     stage3 = []  # leaf services
 
     # Find which services are depended upon by others in the plan
+    # Only hard gates (required_before_*) should influence staging order
     depended_upon = set()
     for svc in plan_services:
         for dep in svc.get("depends_on", []):
-            depended_upon.add(dep["target"])
+            if dep.get("gate", "").startswith("required_before_"):
+                depended_upon.add(dep["target"])
 
     for svc in plan_services:
         if svc.get("type") == "migrations":
