@@ -1,0 +1,226 @@
+# Service Registry — Greenmark Waste Solutions
+# Consumed by railguey orchestration tools (registry, preflight, verify, deploy_plan)
+# See TASK-139 for design rationale and PAL consultation notes.
+
+registry_version: 1
+
+org:
+  name: greenmark
+  github_org: greenmark-waste-solutions
+  environment: production
+
+defaults:
+  preflight:
+    require_clean_worktree: true
+    require_ci_green: true
+  verify:
+    poll_interval_seconds: 10
+    timeout_seconds: 900
+    success_streak: 3
+    log_tail_lines: 50
+    fail_fast_patterns:
+      - "Traceback (most recent call last)"
+      - "UnhandledPromiseRejection"
+      - "FATAL"
+      - "panic:"
+      - "ECONNREFUSED"
+      - "BLOCKED:"
+
+resources:
+  supabase:
+    project_ref: wwmcgtyngnziepeynccz
+    owned_by: cerebro-migrations
+    notes:
+      - "ADR-2026-38: cerebro-migrations owns all medallion DDL"
+      - "No service applies migrations on startup"
+
+services:
+  # ── Database schema (non-Railway deployable) ──────────────────────
+  - name: cerebro-migrations
+    type: migrations
+    repo: cerebro-migrations
+    workspace: ~/repos-greenmark-waste-solutions/cerebro-migrations
+    deploy:
+      branch: main
+      mode: supabase_push
+      command: "npx supabase db push --linked"
+    health:
+      smoke:
+        - kind: migration_status
+          command: "npx supabase migration list --linked"
+          expect: "all migrations synced (no local-only entries)"
+    verify:
+      timeout_seconds: 120
+
+  # ── ETL worker ────────────────────────────────────────────────────
+  - name: data-daemon
+    type: railway_service
+    repo: data-daemon
+    workspace: ~/repos-greenmark-waste-solutions/data-daemon
+    deploy:
+      branch: develop
+      mode: railway_github_autodeploy
+    depends_on:
+      - target: cerebro-migrations
+        kind: database_schema
+        gate: required_before_deploy
+    ci:
+      pre_commit: [pyright, pytest]
+    health:
+      http:
+        path: /health
+        expect_status: 200
+      log_patterns:
+        fail_fast:
+          - "Traceback"
+          - "SQLSTATE"
+          - "BLOCKED:"
+          - "connection refused"
+    verify:
+      timeout_seconds: 1200
+      success_streak: 3
+
+  # ── Next.js dashboard ─────────────────────────────────────────────
+  - name: cerebro
+    type: railway_service
+    repo: cerebro
+    workspace: ~/repos-greenmark-waste-solutions/cerebro
+    deploy:
+      branch: main
+      mode: railway_github_autodeploy
+    depends_on:
+      - target: cerebro-migrations
+        kind: database_schema
+        gate: required_before_deploy
+      - target: cerebro-ai-services
+        kind: runtime_api
+        gate: recommended_before_verify
+    ci:
+      pre_commit: [eslint, vitest]
+    health:
+      http:
+        path: /
+        expect_status: 200
+    verify:
+      timeout_seconds: 900
+
+  # ── FastAPI AI services ───────────────────────────────────────────
+  - name: cerebro-ai-services
+    type: railway_service
+    repo: cerebro-ai-services
+    workspace: ~/repos-greenmark-waste-solutions/cerebro-ai-services
+    deploy:
+      branch: main
+      mode: railway_github_autodeploy
+    depends_on:
+      - target: cerebro-migrations
+        kind: database_schema
+        gate: required_before_deploy
+    ci:
+      pre_commit: [pyright, pytest]
+    health:
+      http:
+        path: /health
+        expect_status: 200
+    verify:
+      timeout_seconds: 900
+
+  # ── QA dashboard ──────────────────────────────────────────────────
+  - name: cerebro-qa
+    type: railway_service
+    repo: cerebro-qa
+    workspace: ~/repos-greenmark-waste-solutions/cerebro-qa
+    deploy:
+      branch: main
+      mode: railway_github_autodeploy
+    depends_on:
+      - target: cerebro-migrations
+        kind: database_schema
+        gate: required_before_deploy
+    ci:
+      pre_commit: [pytest]
+    health:
+      http:
+        path: /health
+        expect_status: 200
+
+  # ── Warp Speed (Claude Agent SDK) ─────────────────────────────────
+  - name: cerebro-warp-speed
+    type: railway_service
+    repo: cerebro-warp-speed
+    workspace: ~/repos-greenmark-waste-solutions/cerebro-warp-speed
+    deploy:
+      branch: main
+      mode: railway_manual_deploy
+    depends_on:
+      - target: cerebro-migrations
+        kind: database_schema
+        gate: recommended_before_verify
+    ci:
+      pre_commit: [pytest]
+    health:
+      http:
+        path: /health
+        expect_status: 200
+
+  # ── Bot farm ──────────────────────────────────────────────────────
+  - name: cerebro-bot-farm
+    type: railway_service
+    repo: cerebro-bot-farm
+    workspace: ~/repos-greenmark-waste-solutions/cerebro-bot-farm
+    deploy:
+      branch: main
+      mode: railway_manual_deploy
+    depends_on:
+      - target: cerebro-migrations
+        kind: database_schema
+        gate: required_before_deploy
+    ci:
+      pre_commit: [pytest]
+    health:
+      log_patterns:
+        fail_fast:
+          - "panic:"
+          - "FATAL"
+
+  # ── Astro website ─────────────────────────────────────────────────
+  - name: gmw-dot-com
+    type: railway_service
+    repo: gmw-dot-com-astro
+    workspace: ~/repos-greenmark-waste-solutions/gmw-dot-com-astro
+    deploy:
+      branch: main
+      mode: railway_github_autodeploy
+    ci:
+      pre_commit: [build]
+    health:
+      http:
+        path: /
+        expect_status: 200
+
+  # ── Portal ────────────────────────────────────────────────────────
+  - name: portal
+    type: railway_service
+    repo: portal
+    workspace: ~/repos-greenmark-waste-solutions/portal
+    deploy:
+      branch: main
+      mode: railway_github_autodeploy
+    ci:
+      pre_commit: [build]
+    health:
+      http:
+        path: /
+        expect_status: 200
+
+  # ── Vault (config store — no deploys) ─────────────────────────────
+  - name: vault-simple
+    type: railway_service
+    repo: null
+    workspace: null
+    deploy:
+      branch: null
+      mode: none
+    notes:
+      - "Empty Railway service used as config/secrets store"
+      - "Zero cost, no deploys, no code"

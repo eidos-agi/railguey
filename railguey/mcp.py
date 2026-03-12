@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from railguey.lib import tools
 from railguey.lib import accounts
 from railguey.lib import totp
+from railguey.lib import orchestrate
 
 mcp = FastMCP("railguey")
 
@@ -519,6 +520,73 @@ async def railguey_service_create(workspace: str, name: str) -> dict:
         name: Name for the new service.
     """
     return await tools.service_create(workspace, name)
+
+
+# ── Orchestration tools ─────────────────────────────────────────────
+
+
+@mcp.tool()
+async def railguey_registry(service: Optional[str] = None) -> dict:
+    """Read the service registry. Returns deploy config, dependencies, and health
+    definitions for one or all services.
+
+    Use this before deploying to understand branch mappings, dependency gates,
+    and verification requirements.
+
+    Args:
+        service: Optional service name. If omitted, returns all services.
+    """
+    return await orchestrate.registry(service)
+
+
+@mcp.tool()
+async def railguey_preflight(service: str, workspace: Optional[str] = None) -> dict:
+    """Pre-push verification for a service. Returns go/no-go with reasons.
+
+    Checks: correct branch, clean worktree, no in-progress deploys,
+    required dependencies deployed. Run this BEFORE pushing code.
+
+    Args:
+        service: Service name from the registry (e.g. "data-daemon", "cerebro").
+        workspace: Optional workspace path override. Uses registry default if omitted.
+    """
+    return await orchestrate.preflight(service, workspace)
+
+
+@mcp.tool()
+async def railguey_verify(
+    service: str,
+    workspace: Optional[str] = None,
+    deployment_id: Optional[str] = None,
+) -> dict:
+    """Post-push verification. Polls Railway deploy status, checks health
+    endpoint, scans logs for fail-fast patterns.
+
+    Run this AFTER pushing code. Will poll until the deploy reaches a terminal
+    state (SUCCESS/FAILED), then run health probes and log scanning.
+
+    Args:
+        service: Service name from the registry.
+        workspace: Optional workspace path override.
+        deployment_id: Optional specific deployment ID to verify.
+    """
+    return await orchestrate.verify(service, workspace, deployment_id)
+
+
+@mcp.tool()
+async def railguey_deploy_plan(repos: list[str]) -> dict:
+    """Generate an ordered deploy plan for changed repos.
+
+    Maps repos to affected services, expands dependencies, and produces
+    a staged execution plan:
+      Stage 1: Database migrations (blocking gate)
+      Stage 2: API/config services (verify before proceeding)
+      Stage 3: Frontends and workers (parallel where safe)
+
+    Args:
+        repos: List of repo names with changes (e.g. ["data-daemon", "cerebro-migrations"]).
+    """
+    return await orchestrate.deploy_plan(repos)
 
 
 if __name__ == "__main__":
