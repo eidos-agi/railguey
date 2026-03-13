@@ -136,16 +136,19 @@ async def railguey_domain(
     domain: Optional[str] = None,
     port: Optional[int] = None,
 ) -> dict:
-    """Generate a railway.app domain or add a custom domain to a service.
+    """Generate a railway.app domain, add a custom domain, or update an existing domain's port.
 
     If no domain is specified, generates a railway-provided domain.
     If a custom domain is specified, returns the DNS records to configure.
+    If the domain already exists on the service and a port is provided, updates
+    the target port binding (requires an account token via railguey_account_add).
+    If the domain exists and no port is provided, returns the existing domain info.
 
     Args:
         workspace: Absolute path to project directory with .env.local.
         service: Railway service name.
         domain: Optional custom domain (e.g. "api.example.com"). Omit to auto-generate.
-        port: Optional port to bind the domain to.
+        port: Optional port to bind the domain to (also used to update existing domains).
     """
     return await tools.domain(workspace, service, domain, port)
 

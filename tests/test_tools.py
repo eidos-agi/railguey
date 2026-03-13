@@ -393,33 +393,58 @@ class TestRestart:
 # ===================================================================
 
 
+EMPTY_DOMAINS = {
+    "serviceInstance": {
+        "domains": {"serviceDomains": [], "customDomains": []}
+    }
+}
+
+EXISTING_SERVICE_DOMAIN = {
+    "serviceInstance": {
+        "domains": {
+            "serviceDomains": [{"id": "sd-1", "domain": "web-abc.up.railway.app"}],
+            "customDomains": [],
+        }
+    }
+}
+
+EXISTING_CUSTOM_DOMAIN = {
+    "serviceInstance": {
+        "domains": {
+            "serviceDomains": [],
+            "customDomains": [{"id": "cd-1", "domain": "api.example.com"}],
+        }
+    }
+}
+
+
 class TestDomain:
     async def test_generate_railway_domain(self, workspace_with_token):
         with _patch_project(), _patch_service_id(), \
-                _patch_gql({"serviceDomainCreate": {"id": "dom-1", "domain": "web-abc.up.railway.app"}}):
+                _patch_gql(EMPTY_DOMAINS, {"serviceDomainCreate": {"id": "dom-1", "domain": "web-abc.up.railway.app"}}):
             result = await domain(str(workspace_with_token), "web")
         assert result["domain"] == "web-abc.up.railway.app"
         assert result["custom"] is False
 
     async def test_custom_domain(self, workspace_with_token):
         with _patch_project(), _patch_service_id(), \
-                _patch_gql({"customDomainCreate": {"id": "dom-2", "domain": "app.example.com"}}):
+                _patch_gql(EMPTY_DOMAINS, {"customDomainCreate": {"id": "dom-2", "domain": "app.example.com"}}):
             result = await domain(str(workspace_with_token), "web", domain="app.example.com")
         assert result["domain"] == "app.example.com"
         assert result["custom"] is True
 
     async def test_with_port(self, workspace_with_token):
         with _patch_project(), _patch_service_id(), \
-                _patch_gql({"serviceDomainCreate": {"id": "dom-3", "domain": "web.up.railway.app"}}) as mock_gql:
+                _patch_gql(EMPTY_DOMAINS, {"serviceDomainCreate": {"id": "dom-3", "domain": "web.up.railway.app"}}) as mock_gql:
             await domain(str(workspace_with_token), "web", port=8080)
-        # Verify targetPort was passed in the input
+        # Verify targetPort was passed in the create call (second _gql call)
         call_args = mock_gql.call_args
         input_vars = call_args[0][2]["input"]
         assert input_vars["targetPort"] == 8080
 
     async def test_custom_domain_with_port(self, workspace_with_token):
         with _patch_project(), _patch_service_id(), \
-                _patch_gql({"customDomainCreate": {"id": "dom-4", "domain": "api.example.com"}}) as mock_gql:
+                _patch_gql(EMPTY_DOMAINS, {"customDomainCreate": {"id": "dom-4", "domain": "api.example.com"}}) as mock_gql:
             await domain(str(workspace_with_token), "web", domain="api.example.com", port=3000)
         input_vars = mock_gql.call_args[0][2]["input"]
         assert input_vars["targetPort"] == 3000
@@ -429,6 +454,69 @@ class TestDomain:
         with _patch_project(), _patch_service_id(None):
             result = await domain(str(workspace_with_token), "ghost")
         assert "error" in result
+
+    # --- Update existing domain port ---
+
+    async def test_update_existing_service_domain_port(self, workspace_with_token):
+        """Existing railway.app domain + port => update targetPort via Bearer auth."""
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(EXISTING_SERVICE_DOMAIN), \
+                _patch_user_token(), \
+                _patch_gql_bearer({"serviceDomainUpdate": True}) as mock_bearer:
+            result = await domain(str(workspace_with_token), "web", port=8000)
+        assert result["updated"] is True
+        assert result["targetPort"] == 8000
+        assert result["domain"] == "web-abc.up.railway.app"
+        assert result["custom"] is False
+        # Verify the Bearer mutation was called with correct input
+        call_args = mock_bearer.call_args[0]
+        input_vars = call_args[2]["input"]
+        assert input_vars["serviceDomainId"] == "sd-1"
+        assert input_vars["targetPort"] == 8000
+        assert input_vars["domain"] == "web-abc.up.railway.app"
+
+    async def test_update_existing_custom_domain_port(self, workspace_with_token):
+        """Existing custom domain + port => update targetPort via Bearer auth."""
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(EXISTING_CUSTOM_DOMAIN), \
+                _patch_user_token(), \
+                _patch_gql_bearer({"customDomainUpdate": True}) as mock_bearer:
+            result = await domain(str(workspace_with_token), "web", domain="api.example.com", port=3000)
+        assert result["updated"] is True
+        assert result["targetPort"] == 3000
+        assert result["domain"] == "api.example.com"
+        assert result["custom"] is True
+        # Verify customDomainId was used (not serviceDomainId)
+        input_vars = mock_bearer.call_args[0][2]["input"]
+        assert input_vars["customDomainId"] == "cd-1"
+
+    async def test_existing_domain_no_port_returns_info(self, workspace_with_token):
+        """Existing domain + no port => just return existing domain info."""
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(EXISTING_SERVICE_DOMAIN):
+            result = await domain(str(workspace_with_token), "web")
+        assert result["existing"] is True
+        assert result["domain"] == "web-abc.up.railway.app"
+        assert result["custom"] is False
+        assert "updated" not in result
+
+    async def test_update_domain_no_account_token(self, workspace_with_token):
+        """Update requires Bearer token — error if no account registered."""
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(EXISTING_SERVICE_DOMAIN), \
+                _patch_user_token_missing():
+            result = await domain(str(workspace_with_token), "web", port=8000)
+        assert "error" in result
+        assert "Bearer" in result["error"]
+
+    async def test_update_domain_gql_error(self, workspace_with_token):
+        """GraphQL error during update passes through."""
+        with _patch_project(), _patch_service_id(), \
+                _patch_gql(EXISTING_SERVICE_DOMAIN), \
+                _patch_user_token(), \
+                _patch_gql_bearer({"error": "unauthorized"}):
+            result = await domain(str(workspace_with_token), "web", port=8000)
+        assert result["error"] == "unauthorized"
 
 
 # ===================================================================

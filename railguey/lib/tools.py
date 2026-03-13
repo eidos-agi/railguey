@@ -423,10 +423,11 @@ async def domain(
     domain: Optional[str] = None,
     port: Optional[int] = None,
 ) -> dict:
-    """Generate a railway.app domain or add a custom domain to a service.
+    """Generate a railway.app domain, add a custom domain, or update an existing domain's port.
 
     Pure GraphQL — no CLI needed. If domain is provided, creates a custom
-    domain. Otherwise generates a railway.app subdomain.
+    domain. Otherwise generates a railway.app subdomain. If the domain already
+    exists on the service and a port is provided, updates the target port.
     """
     token = _load_token(workspace)
     project = await _resolve_project(token)
@@ -441,6 +442,26 @@ async def domain(
     if not service_id:
         return {"error": f"Service '{service}' not found in project"}
 
+    # Check if the domain already exists on this service
+    existing = await _find_existing_domain(token, service_id, environment_id, domain)
+
+    if existing:
+        # Domain already exists
+        if port is None:
+            # No port change requested — just return existing info
+            return {
+                "domain": existing["domain"],
+                "id": existing["id"],
+                "service": service,
+                "custom": existing["custom"],
+                "existing": True,
+            }
+        # Update the target port on the existing domain
+        return await _update_domain_port(
+            existing, service_id, environment_id, service, port,
+        )
+
+    # Domain does not exist — create it
     if domain:
         # Custom domain
         query = """
@@ -483,6 +504,113 @@ async def domain(
         "id": created.get("id", ""),
         "service": service,
         "custom": domain is not None,
+    }
+
+
+async def _find_existing_domain(
+    token: str,
+    service_id: str,
+    environment_id: str,
+    domain_str: Optional[str],
+) -> Optional[dict]:
+    """Check if a domain already exists on the service instance.
+
+    Returns {"id": ..., "domain": ..., "custom": bool} if found, else None.
+    """
+    query = """
+    query serviceInstance($serviceId: String!, $environmentId: String!) {
+      serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+        domains {
+          serviceDomains { id domain }
+          customDomains { id domain }
+        }
+      }
+    }
+    """
+    result = await _gql(token, query, {
+        "serviceId": service_id,
+        "environmentId": environment_id,
+    })
+    if "error" in result:
+        return None
+
+    domains_data = (result.get("serviceInstance") or {}).get("domains") or {}
+
+    # If a specific domain string was provided, look for an exact match
+    if domain_str:
+        for d in domains_data.get("customDomains", []):
+            if d.get("domain") == domain_str:
+                return {"id": d["id"], "domain": d["domain"], "custom": True}
+        for d in domains_data.get("serviceDomains", []):
+            if d.get("domain") == domain_str:
+                return {"id": d["id"], "domain": d["domain"], "custom": False}
+    else:
+        # No domain string — check if any railway.app domain exists
+        svc_domains = domains_data.get("serviceDomains", [])
+        if svc_domains:
+            d = svc_domains[0]
+            return {"id": d["id"], "domain": d["domain"], "custom": False}
+
+    return None
+
+
+async def _update_domain_port(
+    existing: dict,
+    service_id: str,
+    environment_id: str,
+    service_name: str,
+    port: int,
+) -> dict:
+    """Update the targetPort on an existing domain. Requires Bearer auth."""
+    try:
+        user_token = _load_user_token()
+    except ValueError:
+        return {
+            "error": (
+                "Updating a domain's targetPort requires a Bearer (account) token, "
+                "but no account is registered. Project tokens cannot execute this mutation. "
+                "Use railguey_account_add to register an account with access to this workspace."
+            )
+        }
+
+    if existing["custom"]:
+        query = """
+        mutation customDomainUpdate($input: CustomDomainUpdateInput!) {
+          customDomainUpdate(input: $input)
+        }
+        """
+        input_vars = {
+            "customDomainId": existing["id"],
+            "serviceId": service_id,
+            "environmentId": environment_id,
+            "domain": existing["domain"],
+            "targetPort": port,
+        }
+    else:
+        query = """
+        mutation serviceDomainUpdate($input: ServiceDomainUpdateInput!) {
+          serviceDomainUpdate(input: $input)
+        }
+        """
+        input_vars = {
+            "serviceDomainId": existing["id"],
+            "serviceId": service_id,
+            "environmentId": environment_id,
+            "domain": existing["domain"],
+            "targetPort": port,
+        }
+
+    result = await _gql_bearer(user_token, query, {"input": input_vars})
+    if "error" in result:
+        return result
+
+    return {
+        "domain": existing["domain"],
+        "id": existing["id"],
+        "service": service_name,
+        "custom": existing["custom"],
+        "updated": True,
+        "targetPort": port,
     }
 
 
