@@ -12,6 +12,7 @@ from railguey.lib.tools import (
     status, logs, deploy, variables, variable_set, services,
     redeploy, restart, domain, environment_create, deployments,
     rollback, service_info, http_logs, deployment_logs, unlink_repo,
+    service_update,
 )
 
 # ---------------------------------------------------------------------------
@@ -631,6 +632,142 @@ class TestUnlinkRepo:
         with _patch_project(), _patch_service_id(None):
             result = await unlink_repo(str(workspace_with_token), "ghost")
         assert "error" in result
+
+
+# ===================================================================
+# Cross-cutting: missing token
+# ===================================================================
+
+
+# ===================================================================
+# service_update
+# ===================================================================
+
+
+def _patch_gql_bearer(*responses):
+    """Patch _gql_bearer with sequential responses (side_effect) or a single one."""
+    if len(responses) == 1:
+        return patch(
+            "railguey.lib.tools._gql_bearer",
+            new_callable=AsyncMock,
+            return_value=responses[0],
+        )
+    return patch(
+        "railguey.lib.tools._gql_bearer",
+        new_callable=AsyncMock,
+        side_effect=list(responses),
+    )
+
+
+def _patch_user_token(token: str = "user-token-abc"):
+    return patch(
+        "railguey.lib.tools._load_user_token",
+        return_value=token,
+    )
+
+
+def _patch_user_token_missing():
+    return patch(
+        "railguey.lib.tools._load_user_token",
+        side_effect=ValueError("No Railway account token found"),
+    )
+
+
+class TestServiceUpdate:
+    async def test_set_healthcheck(self, workspace_with_token):
+        """Happy path: set a single field (healthcheckPath)."""
+        with _patch_project(), _patch_service_id(), _patch_user_token(), \
+                _patch_gql_bearer({"serviceInstanceUpdate": True}) as mock_bearer:
+            result = await service_update(str(workspace_with_token), "web", healthcheck_path="/health")
+        assert result["updated"] is True
+        assert result["service"] == "web"
+        assert result["fields"] == {"healthcheckPath": "/health"}
+        # Verify the mutation was called with correct args
+        call_args = mock_bearer.call_args[0]
+        assert call_args[0] == "user-token-abc"  # Bearer token
+        gql_vars = call_args[2]
+        assert gql_vars["input"] == {"healthcheckPath": "/health"}
+        assert gql_vars["serviceId"] == "svc-111"
+        assert gql_vars["environmentId"] == "env-xyz"
+
+    async def test_multiple_fields(self, workspace_with_token):
+        """Set multiple fields at once."""
+        with _patch_project(), _patch_service_id(), _patch_user_token(), \
+                _patch_gql_bearer({"serviceInstanceUpdate": True}):
+            result = await service_update(
+                str(workspace_with_token), "web",
+                healthcheck_path="/health",
+                start_command="node server.js",
+                num_replicas=2,
+                region="us-west1",
+            )
+        assert result["updated"] is True
+        assert result["fields"] == {
+            "healthcheckPath": "/health",
+            "startCommand": "node server.js",
+            "numReplicas": 2,
+            "region": "us-west1",
+        }
+
+    async def test_no_fields_error(self, workspace_with_token):
+        """Error when no fields are provided."""
+        result = await service_update(str(workspace_with_token), "web")
+        assert "error" in result
+        assert "No fields to update" in result["error"]
+
+    async def test_no_account_token_error(self, workspace_with_token):
+        """Error when no account token is available."""
+        with _patch_project(), _patch_service_id(), _patch_user_token_missing():
+            result = await service_update(str(workspace_with_token), "web", healthcheck_path="/health")
+        assert "error" in result
+        assert "Bearer" in result["error"]
+        assert "account" in result["error"]
+
+    async def test_service_not_found(self, workspace_with_token):
+        """Error when service name doesn't match any service."""
+        with _patch_project(), _patch_service_id(None):
+            result = await service_update(str(workspace_with_token), "ghost", healthcheck_path="/health")
+        assert "error" in result
+        assert "ghost" in result["error"]
+
+    async def test_project_error_passthrough(self, workspace_with_token):
+        """Project resolution errors pass through."""
+        with _patch_project({"error": "bad token"}):
+            result = await service_update(str(workspace_with_token), "web", healthcheck_path="/health")
+        assert result == {"error": "bad token"}
+
+    async def test_gql_bearer_error(self, workspace_with_token):
+        """GraphQL mutation errors pass through."""
+        with _patch_project(), _patch_service_id(), _patch_user_token(), \
+                _patch_gql_bearer({"error": "unauthorized"}):
+            result = await service_update(str(workspace_with_token), "web", healthcheck_path="/health")
+        assert result["error"] == "unauthorized"
+
+    async def test_all_fields(self, workspace_with_token):
+        """All 8 fields can be set at once."""
+        with _patch_project(), _patch_service_id(), _patch_user_token(), \
+                _patch_gql_bearer({"serviceInstanceUpdate": True}):
+            result = await service_update(
+                str(workspace_with_token), "web",
+                healthcheck_path="/health",
+                start_command="node start",
+                build_command="npm run build",
+                root_directory="/app",
+                region="us-east4",
+                num_replicas=3,
+                restart_policy_type="ON_FAILURE",
+                restart_policy_max_retries=5,
+            )
+        assert result["updated"] is True
+        fields = result["fields"]
+        assert fields["healthcheckPath"] == "/health"
+        assert fields["startCommand"] == "node start"
+        assert fields["buildCommand"] == "npm run build"
+        assert fields["rootDirectory"] == "/app"
+        assert fields["region"] == "us-east4"
+        assert fields["numReplicas"] == 3
+        assert fields["restartPolicyType"] == "ON_FAILURE"
+        assert fields["restartPolicyMaxRetries"] == 5
 
 
 # ===================================================================

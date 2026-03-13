@@ -1021,10 +1021,118 @@ async def project_transfer(
     return {"transferred": True, "projectId": proj.get("id", project_id), "targetTeamId": target_team_id}
 
 
+async def service_update(
+    workspace: str,
+    service: str,
+    healthcheck_path: Optional[str] = None,
+    start_command: Optional[str] = None,
+    build_command: Optional[str] = None,
+    root_directory: Optional[str] = None,
+    region: Optional[str] = None,
+    num_replicas: Optional[int] = None,
+    restart_policy_type: Optional[str] = None,
+    restart_policy_max_retries: Optional[int] = None,
+) -> dict:
+    """Update service instance settings (healthcheck, commands, region, replicas, etc.).
+
+    IMPORTANT: This mutation requires a Bearer (account) token, NOT a project token.
+    The project token is used to resolve IDs, then an account token executes the mutation.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+        healthcheck_path: Healthcheck endpoint path (e.g. "/health").
+        start_command: Command to start the service.
+        build_command: Command to build the service.
+        root_directory: Root directory for the service source.
+        region: Deployment region (e.g. "us-west1").
+        num_replicas: Number of replicas.
+        restart_policy_type: Restart policy type (e.g. "ON_FAILURE", "ALWAYS", "NEVER").
+        restart_policy_max_retries: Max retries for restart policy.
+    """
+    # Build the input dict from non-None params
+    field_map = {
+        "healthcheck_path": "healthcheckPath",
+        "start_command": "startCommand",
+        "build_command": "buildCommand",
+        "root_directory": "rootDirectory",
+        "region": "region",
+        "num_replicas": "numReplicas",
+        "restart_policy_type": "restartPolicyType",
+        "restart_policy_max_retries": "restartPolicyMaxRetries",
+    }
+    local_vars = {
+        "healthcheck_path": healthcheck_path,
+        "start_command": start_command,
+        "build_command": build_command,
+        "root_directory": root_directory,
+        "region": region,
+        "num_replicas": num_replicas,
+        "restart_policy_type": restart_policy_type,
+        "restart_policy_max_retries": restart_policy_max_retries,
+    }
+    gql_input = {}
+    for snake, camel in field_map.items():
+        val = local_vars[snake]
+        if val is not None:
+            gql_input[camel] = val
+
+    if not gql_input:
+        return {"error": "No fields to update. Provide at least one field (healthcheck_path, start_command, etc.)."}
+
+    # Step 1: Use project token to resolve IDs
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
+    # Step 2: Find an account token for Bearer auth (project tokens can't run this mutation)
+    try:
+        user_token = _load_user_token()
+    except ValueError:
+        return {
+            "error": (
+                "serviceInstanceUpdate requires a Bearer (account) token, but no account is registered. "
+                "Project tokens cannot execute this mutation. "
+                "Use railguey_account_add to register an account with access to this workspace."
+            )
+        }
+
+    # Step 3: Execute the mutation with Bearer auth
+    query = """
+    mutation serviceInstanceUpdate($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
+      serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
+    }
+    """
+    result = await _gql_bearer(user_token, query, {
+        "serviceId": service_id,
+        "environmentId": environment_id,
+        "input": gql_input,
+    })
+    if "error" in result:
+        return result
+
+    return {
+        "updated": True,
+        "service": service,
+        "serviceId": service_id,
+        "fields": gql_input,
+    }
+
+
 __all__ = [
     "status", "logs", "deploy", "variables", "variable_set", "services",
     "redeploy", "restart", "domain", "environment_create", "deployments",
     "rollback", "service_info", "http_logs", "deployment_logs",
     "unlink_repo", "doctor", "project_create", "service_create",
     "list_workspaces", "list_projects", "project_delete", "project_transfer",
+    "service_update",
 ]

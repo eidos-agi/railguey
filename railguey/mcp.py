@@ -509,6 +509,52 @@ async def railguey_totp_verify(code: str) -> dict:
 
 
 @mcp.tool()
+async def railguey_service_update(
+    workspace: str,
+    service: str,
+    healthcheck_path: Optional[str] = None,
+    start_command: Optional[str] = None,
+    build_command: Optional[str] = None,
+    root_directory: Optional[str] = None,
+    region: Optional[str] = None,
+    num_replicas: Optional[int] = None,
+    restart_policy_type: Optional[str] = None,
+    restart_policy_max_retries: Optional[int] = None,
+) -> dict:
+    """Update service instance settings like healthcheck, commands, region, and replicas.
+
+    This modifies service configuration without triggering a redeploy.
+    Use railguey_service_info to see current settings first.
+
+    REQUIRES an account token (railguey_account_add) — project tokens cannot
+    execute this mutation. The tool auto-detects the right account.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name.
+        healthcheck_path: Healthcheck endpoint path (e.g. "/health").
+        start_command: Command to start the service (e.g. "node server.js").
+        build_command: Command to build the service (e.g. "npm run build").
+        root_directory: Root directory for the service source.
+        region: Deployment region (e.g. "us-west1").
+        num_replicas: Number of replicas to run.
+        restart_policy_type: Restart policy ("ON_FAILURE", "ALWAYS", or "NEVER").
+        restart_policy_max_retries: Max restart retries (used with ON_FAILURE).
+    """
+    return await tools.service_update(
+        workspace, service,
+        healthcheck_path=healthcheck_path,
+        start_command=start_command,
+        build_command=build_command,
+        root_directory=root_directory,
+        region=region,
+        num_replicas=num_replicas,
+        restart_policy_type=restart_policy_type,
+        restart_policy_max_retries=restart_policy_max_retries,
+    )
+
+
+@mcp.tool()
 async def railguey_service_create(workspace: str, name: str) -> dict:
     """Create a new empty service in a Railway project.
 
