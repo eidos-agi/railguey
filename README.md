@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="railguey" width="500">
+  <img src="https://raw.githubusercontent.com/eidos-agi/railguey/main/logo.png" alt="railguey" width="500">
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@ Railway's GitHub App is fast to set up: connect your repo, push to main, and you
 The GitHub App bundles five responsibilities into one opaque chain: watch for code changes, authenticate to GitHub, receive a webhook, clone the repo, build and deploy. When the chain works, it feels like magic. When it doesn't — and it has broken [four times in four months](WHY-RAILGUEY.md#the-incident-timeline) — there is no observability, no retry, and no notification. Your push goes in. Nothing comes out. You find out when a customer does.
 
 <p align="center">
-  <img src="docs/railway-github-app-problem.png" alt="Railway GitHub App: the fragile chain" width="600">
+  <img src="https://raw.githubusercontent.com/eidos-agi/railguey/main/docs/railway-github-app-problem.png" alt="Railway GitHub App: the fragile chain" width="600">
 </p>
 
 Every decision diamond in this diagram is a place where the chain can silently break. Missed webhooks, lost build triggers, GitHub App auth failures — all produce the same result: **nothing happens, and nobody tells you**.
@@ -37,7 +37,7 @@ This isn't a bug. It's an architectural choice. Railway chose to own the entire 
 railguey separates concerns. GitHub Actions watches your repo (GitHub watching GitHub — the thing it was built for). railguey handles the deploy via Railway's API using project-scoped tokens. Railway builds and runs your service (the thing *it* was built for). Each system does one job.
 
 <p align="center">
-  <img src="docs/railguey-solution.png" alt="railguey: token-based deploy pipeline" width="700">
+  <img src="https://raw.githubusercontent.com/eidos-agi/railguey/main/docs/railguey-solution.png" alt="railguey: token-based deploy pipeline" width="700">
 </p>
 
 If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If the service is unhealthy, `railguey doctor` catches it. Every step is observable, retryable, and owned by the system best suited to do it.
