@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.4 — PyPI README fix + org migration
+
+- **Fixed**: README images now use absolute URLs (PyPI renders from sdist, relative paths broke)
+- **Fixed**: All references migrated from `rhea-impact` to `eidos-agi`
+- **Fixed**: LICENSE copyright updated to Eidos AGI
+- **Fixed**: Author email updated to daniel@eidosagi.com
+- **Fixed**: Publish workflow permissions (contents:read for private repos)
+
+## 0.2.3 — First PyPI publish
+
+- First publish to PyPI under `eidos-agi` org
+- Trusted publisher configured (OIDC, no API tokens)
+
 ## 0.2.0 — First PyPI release
 
 - **Package restructure**: proper Python package (`railguey/` directory) instead of bare `server.py`
