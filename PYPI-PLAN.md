@@ -3,7 +3,7 @@
 ## Prerequisites
 
 ### 1. PyPI account
-- Register at https://pypi.org/account/register/ (use `daniel@rhea-impact.com`)
+- Register at https://pypi.org/account/register/ (use `daniel@eidosagi.com`)
 - Enable 2FA (required for new projects since 2024)
 - Create an API token: Account Settings → API tokens → "Add API token"
   - Scope: "Entire account" for first publish, then lock to project after

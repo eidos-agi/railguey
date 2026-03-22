@@ -10,3 +10,4 @@ venv/
 *.env
 *.env.local
 .pytest_cache/
+.mcp.json

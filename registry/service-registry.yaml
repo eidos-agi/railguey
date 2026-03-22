@@ -1,6 +1,9 @@
 # Service Registry — Greenmark Waste Solutions
 # Consumed by railguey orchestration tools (registry, preflight, verify, deploy_plan)
-# See TASK-139 for design rationale and PAL consultation notes.
+# See ADR-2026-08 for design rationale.
+#
+# This file is the single source of truth for what Greenmark runs, how it deploys,
+# and what depends on what. If you're new, read the descriptions first.
 
 registry_version: 1
 
@@ -37,6 +40,12 @@ resources:
 services:
   # ── Database schema (non-Railway deployable) ──────────────────────
   - name: cerebro-migrations
+    description: >
+      Database schema for all of Cerebro. Every table, view, index, and RLS
+      policy lives here. This is not a running service — it's a collection of
+      SQL migration files that get pushed to Supabase. 6 other services depend
+      on this being up to date. If you change the schema, push migrations
+      BEFORE deploying anything else.
     type: migrations
     repo: cerebro-migrations
     workspace: ~/repos-greenmark-waste-solutions/cerebro-migrations
@@ -54,6 +63,11 @@ services:
 
   # ── ETL worker ────────────────────────────────────────────────────
   - name: data-daemon
+    description: >
+      The extraction pipeline. Pulls data from vendor systems (Sage Intacct,
+      HubSpot, Navusoft, etc.) into the bronze layer of the warehouse on a
+      schedule. YAML-driven connectors, Postgres job queue, 82+ tests.
+      Slow builds (~20 min) so verify timeout is extended to 1200s.
     type: railway_service
     repo: data-daemon
     workspace: ~/repos-greenmark-waste-solutions/data-daemon
@@ -64,6 +78,7 @@ services:
       - target: cerebro-migrations
         kind: database_schema
         gate: required_before_deploy
+        why: "data-daemon writes to bronze tables that migrations create"
     ci:
       pre_commit: [pyright, pytest]
     health:
@@ -82,6 +97,10 @@ services:
 
   # ── Next.js dashboard ─────────────────────────────────────────────
   - name: cerebro
+    description: >
+      The main executive dashboard. Next.js app that Michael, Alex, and Robert
+      use daily. Shows financial data, CRM metrics, fleet status, and data
+      quality scores. RBAC controls who sees what. This is the product.
     type: railway_service
     repo: cerebro
     workspace: ~/repos-greenmark-waste-solutions/cerebro
@@ -92,9 +111,11 @@ services:
       - target: cerebro-migrations
         kind: database_schema
         gate: required_before_deploy
+        why: "cerebro reads from gold/silver views that migrations create"
       - target: cerebro-ai-services
         kind: runtime_api
         gate: recommended_before_verify
+        why: "AI features (chat, transcription) call this API — dashboard works without it but those features break"
     ci:
       pre_commit: [eslint, vitest]
     health:
@@ -106,6 +127,10 @@ services:
 
   # ── FastAPI AI services ───────────────────────────────────────────
   - name: cerebro-ai-services
+    description: >
+      Backend AI API that powers Cerebro's intelligent features — chat
+      assistant, document transcription, and natural language queries.
+      FastAPI + Claude. Cerebro calls this; it doesn't serve users directly.
     type: railway_service
     repo: cerebro-ai-services
     workspace: ~/repos-greenmark-waste-solutions/cerebro-ai-services
@@ -116,6 +141,7 @@ services:
       - target: cerebro-migrations
         kind: database_schema
         gate: required_before_deploy
+        why: "reads warehouse tables for RAG context and query results"
     ci:
       pre_commit: [pyright, pytest]
     health:
@@ -127,6 +153,10 @@ services:
 
   # ── QA dashboard ──────────────────────────────────────────────────
   - name: cerebro-qa
+    description: >
+      Data quality monitoring dashboard. Runs automated checks against the
+      warehouse (null rates, freshness, row counts, cross-source consistency)
+      and surfaces issues before they reach the executive dashboard.
     type: railway_service
     repo: cerebro-qa
     workspace: ~/repos-greenmark-waste-solutions/cerebro-qa
@@ -137,6 +167,7 @@ services:
       - target: cerebro-migrations
         kind: database_schema
         gate: required_before_deploy
+        why: "QA checks reference bronze/silver/gold tables"
     ci:
       pre_commit: [pytest]
     health:
@@ -146,6 +177,10 @@ services:
 
   # ── Warp Speed (Claude Agent SDK) ─────────────────────────────────
   - name: cerebro-warp-speed
+    description: >
+      Conversational AI agent built on Claude Agent SDK. Connects to CRM,
+      accounting, and fleet data via MCP tools. Used for natural language
+      queries across all vendor systems. Experimental — not yet customer-facing.
     type: railway_service
     repo: cerebro-warp-speed
     workspace: ~/repos-greenmark-waste-solutions/cerebro-warp-speed
@@ -156,6 +191,7 @@ services:
       - target: cerebro-migrations
         kind: database_schema
         gate: recommended_before_verify
+        why: "uses warehouse data for context but can fall back to local fixtures"
     ci:
       pre_commit: [pytest]
     health:
@@ -165,6 +201,10 @@ services:
 
   # ── Bot farm ──────────────────────────────────────────────────────
   - name: cerebro-bot-farm
+    description: >
+      Background worker pool for long-running AI tasks — report generation,
+      bulk analysis, scheduled intelligence jobs. Pulls work from a queue
+      and writes results back to the warehouse.
     type: railway_service
     repo: cerebro-bot-farm
     workspace: ~/repos-greenmark-waste-solutions/cerebro-bot-farm
@@ -175,6 +215,7 @@ services:
       - target: cerebro-migrations
         kind: database_schema
         gate: required_before_deploy
+        why: "reads from and writes to warehouse tables"
     ci:
       pre_commit: [pytest]
     health:
@@ -185,6 +226,10 @@ services:
 
   # ── Astro website ─────────────────────────────────────────────────
   - name: gmw-dot-com
+    description: >
+      Public website for Greenmark Waste Solutions (greenmarkwaste.com).
+      Astro 5 + Tailwind + nginx. Static site, no database dependency.
+      Replacement for the old Webflow site. SEO-optimized.
     type: railway_service
     repo: gmw-dot-com-astro
     workspace: ~/repos-greenmark-waste-solutions/gmw-dot-com-astro
@@ -200,6 +245,9 @@ services:
 
   # ── Portal ────────────────────────────────────────────────────────
   - name: portal
+    description: >
+      Customer-facing portal for Greenmark clients. Allows customers to
+      view invoices, request service changes, and access account information.
     type: railway_service
     repo: portal
     workspace: ~/repos-greenmark-waste-solutions/portal
@@ -215,12 +263,14 @@ services:
 
   # ── Vault (config store — no deploys) ─────────────────────────────
   - name: vault-simple
+    description: >
+      Not a real service. Empty Railway container used purely as a key-value
+      store for environment variables and secrets that other services reference.
+      Zero cost, never deploys, no code. Think of it as a shared config file
+      that lives in Railway instead of git.
     type: railway_service
     repo: null
     workspace: null
     deploy:
       branch: null
       mode: none
-    notes:
-      - "Empty Railway service used as config/secrets store"
-      - "Zero cost, no deploys, no code"

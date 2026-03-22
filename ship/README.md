@@ -90,7 +90,7 @@ Tag a version and publish to PyPI via GitHub Actions.
 ### PyPI trusted publisher setup (one-time)
 If this is the first release:
 1. Register at https://pypi.org/manage/account/publishing/
-   - Project: `railguey`, Owner: `rhea-impact`, Repo: `railguey`, Workflow: `publish.yml`, Environment: `pypi`
+   - Project: `railguey`, Owner: `eidos-agi`, Repo: `railguey`, Workflow: `publish.yml`, Environment: `pypi`
 2. Create `pypi` environment in GitHub repo Settings → Environments
 
 ## Verify

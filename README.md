@@ -9,9 +9,9 @@
 
 <p align="center">
   <a href="https://pypi.org/project/railguey/"><img src="https://img.shields.io/pypi/v/railguey" alt="PyPI"></a>
-  <a href="https://github.com/rhea-impact/railguey/actions/workflows/test.yml"><img src="https://github.com/rhea-impact/railguey/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/eidos-agi/railguey/actions/workflows/test.yml"><img src="https://github.com/eidos-agi/railguey/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="https://pypi.org/project/railguey/"><img src="https://img.shields.io/pypi/pyversions/railguey" alt="Python"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/rhea-impact/railguey" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/eidos-agi/railguey" alt="License"></a>
 </p>
 
 ---
@@ -86,7 +86,7 @@ uvx railguey --help
 <summary>Install from source</summary>
 
 ```bash
-git clone https://github.com/rhea-impact/railguey.git
+git clone https://github.com/eidos-agi/railguey.git
 cd railguey
 pip install -e .
 ```
@@ -142,7 +142,7 @@ Add to `~/.claude.json` under `mcpServers`:
 <summary>From source (development)</summary>
 
 ```bash
-git clone https://github.com/rhea-impact/railguey.git
+git clone https://github.com/eidos-agi/railguey.git
 cd railguey
 pip install -e .
 claude mcp add --scope user railguey -- railguey serve

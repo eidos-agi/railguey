@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "Daniel Shanklin", email = "daniel@rhea-impact.com" },
+    { name = "Daniel Shanklin", email = "daniel@eidosagi.com" },
 ]
 keywords = ["railway", "mcp", "deploy", "devops", "model-context-protocol"]
 classifiers = [
@@ -39,10 +39,10 @@ railguey = "railguey.cli:main"
 railguey-mcp = "railguey:run"
 
 [project.urls]
-Homepage = "https://github.com/rhea-impact/railguey"
-Repository = "https://github.com/rhea-impact/railguey"
-Issues = "https://github.com/rhea-impact/railguey/issues"
-Changelog = "https://github.com/rhea-impact/railguey/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/eidos-agi/railguey"
+Repository = "https://github.com/eidos-agi/railguey"
+Issues = "https://github.com/eidos-agi/railguey/issues"
+Changelog = "https://github.com/eidos-agi/railguey/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]
