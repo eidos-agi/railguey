@@ -7,22 +7,17 @@ Railway CLI.
 Config format:
 {
   "accounts": {
-    "aic-holdings": {
+    "my-org": {
       "token": "rw_...",
-      "email": "dshanklin@aicholdings.com",
+      "email": "you@example.com",
       "default_workspace_id": "...",
       "workspaces": {
-        "AIC Holdings": "workspace-uuid",
+        "My Org": "workspace-uuid",
         "Personal": "workspace-uuid"
       }
-    },
-    "eidos": {
-      "token": "rw_...",
-      "email": "daniel@eidosagi.com",
-      ...
     }
   },
-  "default_account": "aic-holdings"
+  "default_account": "my-org"
 }
 """
 
