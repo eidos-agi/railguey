@@ -20,6 +20,21 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Validate release
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          TAG_VERSION=${GIT_TAG#v}
+          if [ "$VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION does not match pyproject.toml version $VERSION"
+            exit 1
+          fi
+          if ! grep -q "## v${TAG_VERSION}" CHANGELOG.md 2>/dev/null; then
+            echo "::error::No CHANGELOG.md entry for v${TAG_VERSION}"
+            exit 1
+          fi
+
       - name: Install build tools
         run: pip install build
 
