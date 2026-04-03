@@ -1,0 +1,54 @@
+# Eidos AGI PyPI Package Registry
+# Consumed by railguey pypi_status and orchestration tools.
+
+registry_version: 1
+
+org:
+  name: eidos-agi
+  github_org: eidos-agi
+
+services:
+  - name: ai-cockpit
+    type: pypi_package
+    repo: ai-cockpit
+    workspace: ~/repos-eidos-agi/ai-cockpit
+    deploy:
+      mode: pypi_trusted_publisher
+      pypi_name: ai-cockpit
+      trigger: tag_push
+
+  - name: railguey
+    type: pypi_package
+    repo: railguey
+    workspace: ~/repos-eidos-agi/railguey
+    deploy:
+      mode: pypi_trusted_publisher
+      pypi_name: railguey
+      trigger: tag_push
+
+  - name: apple-a-day
+    type: pypi_package
+    repo: apple-a-day
+    workspace: ~/repos-eidos-agi/apple-a-day
+    deploy:
+      mode: pypi_trusted_publisher
+      pypi_name: apple-a-day
+      trigger: tag_push
+
+  - name: eidos-mail
+    type: pypi_package
+    repo: eidos-mail
+    workspace: ~/repos-eidos-agi/eidos-mail
+    deploy:
+      mode: pypi_trusted_publisher
+      pypi_name: eidos-mail
+      trigger: tag_push
+
+  - name: resume-resume
+    type: pypi_package
+    repo: resume-resume
+    workspace: ~/repos-eidos-agi/resume-resume
+    deploy:
+      mode: pypi_trusted_publisher
+      pypi_name: resume-resume
+      trigger: tag_push

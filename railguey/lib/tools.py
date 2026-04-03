@@ -105,6 +105,87 @@ async def status(workspace: str) -> dict:
     }
 
 
+async def pypi_status(packages: list[str] | None = None) -> dict:
+    """Check PyPI publication status for Eidos packages.
+
+    Compares local version (pyproject.toml), latest git tag, and PyPI
+    published version. Reports: IN_SYNC, GIT_AHEAD, PUBLISH_FAILED, UNKNOWN.
+    """
+    import subprocess
+    import tomllib
+
+    from railguey.lib.orchestrate import _load_all_registries, _expand_home
+    from railguey.lib.pypi import get_pypi_version
+
+    # Collect pypi_package services from all registries
+    pypi_services = []
+    for reg in _load_all_registries():
+        for svc in reg.get("services", []):
+            if svc.get("type") == "pypi_package":
+                if packages is None or svc["name"] in packages:
+                    pypi_services.append(svc)
+
+    if not pypi_services:
+        return {"error": "No pypi_package services found in registry"}
+
+    results = []
+    for svc in pypi_services:
+        ws = _expand_home(svc.get("workspace"))
+        pypi_name = svc.get("deploy", {}).get("pypi_name", svc["name"])
+
+        entry = {"name": svc["name"], "pypi_name": pypi_name}
+
+        # Get local version from pyproject.toml
+        if ws:
+            pyproject_path = Path(ws) / "pyproject.toml"
+            if pyproject_path.exists():
+                try:
+                    with open(pyproject_path, "rb") as f:
+                        entry["local_version"] = tomllib.load(f)["project"]["version"]
+                except Exception:
+                    pass
+
+        # Get latest git tag
+        if ws and Path(ws).exists():
+            try:
+                result = subprocess.run(
+                    ["git", "describe", "--tags", "--abbrev=0"],
+                    cwd=ws, capture_output=True, text=True, timeout=5,
+                )
+                if result.returncode == 0:
+                    entry["latest_tag"] = result.stdout.strip()
+            except Exception:
+                pass
+
+        # Get PyPI version
+        pypi_info = await get_pypi_version(pypi_name)
+        if "error" not in pypi_info:
+            entry["pypi_version"] = pypi_info["version"]
+        else:
+            entry["pypi_version"] = None
+            entry["pypi_error"] = pypi_info.get("error", "unknown")
+
+        # Determine status
+        local = entry.get("local_version")
+        pypi_v = entry.get("pypi_version")
+        tag = entry.get("latest_tag", "").lstrip("v")
+
+        if not pypi_v:
+            entry["status"] = "UNKNOWN"
+        elif local == pypi_v and tag == pypi_v:
+            entry["status"] = "IN_SYNC"
+        elif local and local != pypi_v and tag == local:
+            entry["status"] = "GIT_AHEAD"
+        elif tag and tag != pypi_v and local == pypi_v:
+            entry["status"] = "PUBLISH_FAILED"
+        else:
+            entry["status"] = "DRIFT"
+
+        results.append(entry)
+
+    return {"packages": results}
+
+
 async def logs(
     workspace: str,
     service: str,

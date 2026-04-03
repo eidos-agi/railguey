@@ -575,6 +575,20 @@ async def railguey_service_create(workspace: str, name: str) -> dict:
 
 
 @mcp.tool()
+async def railguey_pypi_status(packages: Optional[list[str]] = None) -> dict:
+    """Check PyPI publication status for Eidos packages.
+
+    Compares local version (pyproject.toml), latest git tag, and PyPI
+    published version. Reports: IN_SYNC, GIT_AHEAD, PUBLISH_FAILED, UNKNOWN.
+
+    Args:
+        packages: Optional list of package names to check. If omitted, checks all
+                  pypi_package entries in the service registry.
+    """
+    return await tools.pypi_status(packages)
+
+
+@mcp.tool()
 async def railguey_registry(service: Optional[str] = None) -> dict:
     """Read the service registry. Returns deploy config, dependencies, and health
     definitions for one or all services.

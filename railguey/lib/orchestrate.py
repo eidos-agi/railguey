@@ -19,17 +19,31 @@ from railguey.lib.graphql import _gql, _resolve_project, _resolve_service_id
 
 _REGISTRY_PATHS = [
     Path(__file__).parent.parent.parent / "registry" / "service-registry.yaml",
+    Path(__file__).parent.parent.parent / "registry" / "eidos-registry.yaml",
     Path.home() / ".railguey" / "service-registry.yaml",
+    Path.home() / ".railguey" / "eidos-registry.yaml",
 ]
 
 
 def _load_registry() -> dict:
-    """Load and parse the service registry YAML."""
+    """Load and parse the first service registry YAML found."""
     for path in _REGISTRY_PATHS:
         if path.exists():
             with open(path) as f:
                 return yaml.safe_load(f)
     return {"error": f"Registry not found. Searched: {[str(p) for p in _REGISTRY_PATHS]}"}
+
+
+def _load_all_registries() -> list[dict]:
+    """Load all registry YAML files. Returns list of parsed registries."""
+    registries = []
+    for path in _REGISTRY_PATHS:
+        if path.exists():
+            with open(path) as f:
+                reg = yaml.safe_load(f)
+                if reg and "services" in reg:
+                    registries.append(reg)
+    return registries
 
 
 def _find_service(registry: dict, name: str) -> dict | None:
