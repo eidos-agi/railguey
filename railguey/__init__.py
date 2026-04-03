@@ -1,6 +1,11 @@
 """railguey — Project-scoped Railway management."""
 
-__version__ = "0.2.4"
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("railguey")
+except PackageNotFoundError:
+    __version__ = "dev"
 
 
 def run():
