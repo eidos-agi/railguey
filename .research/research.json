@@ -1,0 +1,35 @@
+{
+  "id": "4f296f95-959d-4ada-8741-25122f69e1ce",
+  "version": "0.1.0",
+  "projectName": "PyPI Release Pipeline for Eidos Ecosystem",
+  "created": "2026-04-03",
+  "phase": "decided",
+  "transitions": [
+    {
+      "phase": "research",
+      "date": "2026-04-03"
+    },
+    {
+      "phase": "locked",
+      "date": "2026-04-03",
+      "note": "Criteria weights frozen"
+    },
+    {
+      "phase": "reviewed",
+      "date": "2026-04-03",
+      "note": "Peer review by claude-opus-4-6"
+    },
+    {
+      "phase": "scored",
+      "date": "2026-04-03",
+      "note": "Scored candidate: minimal-fix"
+    },
+    {
+      "phase": "decided",
+      "date": "2026-04-03",
+      "note": "Adopt BOTH minimal-fix AND railguey-pypi. Reject full-automation. Phase 1: fix version single-source"
+    }
+  ],
+  "question": "What is the right PyPI release pipeline for small Eidos AGI packages \u2014 and should railguey be aware of PyPI-backed services as a first-class deployment type?",
+  "context": "Eidos AGI publishes multiple PyPI packages (ai-cockpit, eidos-mail, resume-resume, railguey itself, etc). Current release process is manual: edit version in 2 files, hand-write CHANGELOG, tag, push. Trusted publisher auto-publishes to PyPI. Railguey manages Railway deployments but has no awareness of PyPI as an upstream artifact source. Some Railway services depend on PyPI packages being published first. We need to decide: (1) how to standardize the release pipeline across all packages, and (2) whether railguey should track PyPI packages as first-class artifacts in its service registry."
+}
