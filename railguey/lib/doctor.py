@@ -954,12 +954,45 @@ async def doctor(workspace: str) -> dict:
     if has_token:
         proj_result = await doctor_project_level(workspace)
 
+    # Layer 4: PyPI drift check (if this workspace is a pypi_package)
+    pypi_result = None
+    try:
+        from railguey.lib.orchestrate import _load_all_registries, _expand_home
+        for reg in _load_all_registries():
+            for svc in reg.get("services", []):
+                if svc.get("type") != "pypi_package":
+                    continue
+                svc_ws = _expand_home(svc.get("workspace"))
+                if svc_ws and Path(svc_ws).resolve() == ws:
+                    from railguey.lib.tools import pypi_status
+                    pypi_result = await pypi_status([svc["name"]])
+                    break
+            if pypi_result:
+                break
+    except Exception:
+        pass
+
     # Combine all findings for remediation
     all_findings = list(ws_findings)
     if svc_result:
         all_findings.extend(svc_result.get("findings", []))
     if proj_result:
         all_findings.extend(proj_result.get("findings", []))
+    if pypi_result and "packages" in pypi_result:
+        for pkg in pypi_result["packages"]:
+            status = pkg.get("status", "UNKNOWN")
+            if status == "IN_SYNC":
+                all_findings.append({"check": "pypi_sync", "status": "pass",
+                                     "detail": f"PyPI {pkg.get('pypi_version')} == local {pkg.get('local_version')}"})
+            elif status == "GIT_AHEAD":
+                all_findings.append({"check": "pypi_sync", "status": "warn",
+                                     "detail": f"Local {pkg.get('local_version')} ahead of PyPI {pkg.get('pypi_version')} — publish pending?"})
+            elif status == "PUBLISH_FAILED":
+                all_findings.append({"check": "pypi_sync", "status": "fail",
+                                     "detail": f"Tag pushed but PyPI has {pkg.get('pypi_version')} — publish may have failed"})
+            else:
+                all_findings.append({"check": "pypi_sync", "status": "warn",
+                                     "detail": f"PyPI status: {status}"})
 
     remediation, verify_after = _build_remediation(all_findings, wf)
 
@@ -987,6 +1020,8 @@ async def doctor(workspace: str) -> dict:
         result["service"] = svc_result
     if proj_result:
         result["project"] = proj_result
+    if pypi_result and "packages" in pypi_result:
+        result["pypi"] = pypi_result
     if remediation:
         result["remediation"] = remediation
     if verify_after:
