@@ -626,12 +626,31 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
         workflow_envs = set(wf["environments"])
         uncovered = workflow_envs - {token_env_name}
         if uncovered:
-            findings.append({
-                "check": "Token environment scope", "status": "fail",
-                "message": (f"Token scoped to '{token_env_name}' but workflow targets: "
-                            f"{', '.join(sorted(uncovered))}"),
-                "fix": "Generate a broader token or use per-environment secrets",
-            })
+            # Check if the account system covers the gap
+            try:
+                from railguey.lib.accounts import list_accounts
+                accts = list_accounts()
+                acct_names = set(accts.get("accounts", {}).keys())
+                has_accounts = len(acct_names) >= 2
+            except Exception:
+                has_accounts = False
+
+            if has_accounts:
+                score += 1
+                findings.append({
+                    "check": "Token environment scope", "status": "pass",
+                    "message": (f"Token scoped to '{token_env_name}' but "
+                                f"account system covers {', '.join(sorted(uncovered))} — "
+                                f"use railguey_account_default to switch"),
+                })
+            else:
+                findings.append({
+                    "check": "Token environment scope", "status": "fail",
+                    "message": (f"Token scoped to '{token_env_name}' but workflow targets: "
+                                f"{', '.join(sorted(uncovered))}"),
+                    "fix": ("Register tokens for each environment with railguey_account_add, "
+                            "then switch with railguey_account_default"),
+                })
         else:
             score += 1
             findings.append({"check": "Token environment scope", "status": "pass",
@@ -872,7 +891,7 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
         elif check == "Token environment scope":
             remediation.append({"intent": "Fix token environment coverage",
                                 "detail": f["message"],
-                                "suggested_tool": "Generate broader token or per-environment secrets"})
+                                "suggested_tool": "railguey_account_add + railguey_account_default"})
         elif check == "Environment names":
             remediation.append({"intent": "Fix workflow environment names",
                                 "detail": f["message"],

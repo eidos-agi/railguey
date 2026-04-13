@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.2.5 — Account system wired into token resolution
+## v0.2.6 — Doctor checks account system + PyPI fix
+
+- **Fixed**: CHANGELOG headers now use `v` prefix to match publish workflow validation
+- **Improved**: Doctor now checks if the account system covers multi-environment gaps. When accounts are registered for uncovered environments, the token scope check passes instead of failing.
+- **Improved**: Remediation suggests `railguey_account_add` + `railguey_account_default` instead of "generate broader token"
+
+## v0.2.5 — Account system wired into token resolution
 
 - **Fixed**: `_load_token()` now checks the account system (`~/.railguey/accounts.json`) before falling back to `.env.local`. Previously, `railguey_account_add` and `railguey_account_default` had no effect on actual API calls — every tool still read from `.env.local`.
 - **Behavior change**: When a default account is set, its token takes priority over the workspace `.env.local` token. This lets `railguey_account_default production` switch all tools to the production environment without swapping `.env` files.

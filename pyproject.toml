@@ -1,6 +1,6 @@
 [project]
 name = "railguey"
-version = "0.2.5"
+version = "0.2.6"
 description = "Project-scoped Railway MCP server — reads RAILWAY_TOKEN from .env.local, no login needed"
 readme = "README.md"
 license = "MIT"
