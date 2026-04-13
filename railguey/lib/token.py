@@ -1,13 +1,27 @@
-"""Token discovery — reads RAILWAY_TOKEN from project .env files."""
+"""Token discovery — account system first, then project .env files."""
 
 from pathlib import Path
 
 
 def _load_token(workspace: str) -> str:
-    """Read RAILWAY_TOKEN from workspace/.env.local (then .env as fallback).
+    """Resolve a Railway token.
 
-    Simple line parser — no python-dotenv dependency needed.
+    Priority:
+    1. Default account in ~/.railguey/accounts.json (set via railguey_account_default)
+    2. RAILWAY_TOKEN in workspace/.env.local (then .env as fallback)
+
+    This lets the account system override per-workspace tokens,
+    so a single `railguey_account_default production` switches all
+    tools to the production environment without touching .env files.
     """
+    # 1. Account system
+    try:
+        from railguey.lib.accounts import get_account_token
+        return get_account_token()
+    except (ValueError, ImportError):
+        pass
+
+    # 2. Workspace .env files
     ws = Path(workspace).expanduser().resolve()
     for filename in (".env.local", ".env"):
         envfile = ws / filename
@@ -25,6 +39,6 @@ def _load_token(workspace: str) -> str:
                 if value:
                     return value
     raise ValueError(
-        f"RAILWAY_TOKEN not found in {ws}/.env.local or {ws}/.env — "
-        f"add it to the project's .env.local file."
+        f"No Railway token found. Use railguey_account_add to register an account, "
+        f"or add RAILWAY_TOKEN to {ws}/.env.local."
     )

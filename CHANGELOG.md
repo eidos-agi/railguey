@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5 — Account system wired into token resolution
+
+- **Fixed**: `_load_token()` now checks the account system (`~/.railguey/accounts.json`) before falling back to `.env.local`. Previously, `railguey_account_add` and `railguey_account_default` had no effect on actual API calls — every tool still read from `.env.local`.
+- **Behavior change**: When a default account is set, its token takes priority over the workspace `.env.local` token. This lets `railguey_account_default production` switch all tools to the production environment without swapping `.env` files.
+- **Use case**: Multi-environment workflows (e.g., setting a Railway variable on production from a workspace that defaults to develop).
+
 ## 0.2.4 — PyPI README fix + org migration
 
 - **Fixed**: README images now use absolute URLs (PyPI renders from sdist, relative paths broke)
