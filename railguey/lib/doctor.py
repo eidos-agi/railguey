@@ -388,7 +388,7 @@ def _check_workspace(ws: Path, wf: dict, has_token: bool) -> tuple[list, int, in
                 ["git", "status", "--porcelain"],
                 cwd=str(ws), capture_output=True, text=True, timeout=10,
             )
-            dirty_files = [l for l in result_git.stdout.strip().splitlines() if l.strip()]
+            dirty_files = [ln for ln in result_git.stdout.strip().splitlines() if ln.strip()]
             if dirty_files:
                 findings.append({"check": "Uncommitted changes", "status": "warn",
                                  "message": f"{len(dirty_files)} uncommitted file(s)",

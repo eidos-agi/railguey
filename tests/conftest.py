@@ -5,8 +5,23 @@ Helpers and constants live in tests/helpers.py (importable).
 """
 
 import pytest
+from unittest.mock import patch
 
 from tests.helpers import write_file
+
+
+# ---------------------------------------------------------------------------
+# Isolate tests from the host account system (~/.railguey/accounts.json)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _no_account_system():
+    """Prevent tests from reading the real ~/.railguey/accounts.json."""
+    with patch(
+        "railguey.lib.accounts.get_account_token",
+        side_effect=ValueError("No accounts configured (test isolation)"),
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------

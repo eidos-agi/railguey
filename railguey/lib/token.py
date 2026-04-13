@@ -1,4 +1,4 @@
-"""Token discovery — account system first, then project .env files."""
+"""Token discovery — account override, then workspace .env files."""
 
 from pathlib import Path
 
@@ -7,14 +7,18 @@ def _load_token(workspace: str) -> str:
     """Resolve a Railway token.
 
     Priority:
-    1. Default account in ~/.railguey/accounts.json (set via railguey_account_default)
+    1. Default account in ~/.railguey/accounts.json (if one is set)
     2. RAILWAY_TOKEN in workspace/.env.local (then .env as fallback)
 
-    This lets the account system override per-workspace tokens,
-    so a single `railguey_account_default production` switches all
-    tools to the production environment without touching .env files.
+    The account system acts as an explicit override — when you call
+    railguey_account_default('production'), ALL tools switch to the
+    production token regardless of what's in .env.local. This is the
+    core use case: briefly operate on a different environment without
+    swapping .env files.
+
+    When no account is configured, falls back to workspace .env files.
     """
-    # 1. Account system
+    # 1. Account system override
     try:
         from railguey.lib.accounts import get_account_token
         return get_account_token()

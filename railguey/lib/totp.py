@@ -145,7 +145,7 @@ def setup() -> dict:
     uri = f"otpauth://totp/Railguey?secret={b32}&issuer=Railguey&digits=6&period=30"
 
     # Show QR — opens Preview, deletes image when Preview is closed
-    qr_status = _show_and_destroy_qr(uri)
+    _show_and_destroy_qr(uri)
 
     return {
         "status": "TOTP configured",

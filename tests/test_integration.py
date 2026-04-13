@@ -33,7 +33,7 @@ skip_no_workspaces = pytest.mark.skipif(
 )
 
 from railguey.lib.token import _load_token
-from railguey.lib.graphql import _gql, _resolve_project, _resolve_service_id
+from railguey.lib.graphql import _gql, _resolve_project
 from railguey.lib.tools import (
     status,
     services,

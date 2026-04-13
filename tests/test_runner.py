@@ -92,5 +92,6 @@ class TestRunRailway:
 
     @pytest.mark.asyncio
     async def test_raises_on_missing_token(self, workspace):
-        with pytest.raises(ValueError, match="RAILWAY_TOKEN not found"):
-            await _run_railway(str(workspace), ["status"])
+        with patch("shutil.which", return_value="/usr/bin/railway"):
+            with pytest.raises(ValueError, match="No Railway token found"):
+                await _run_railway(str(workspace), ["status"])

@@ -15,7 +15,7 @@ from railguey.lib.token import _load_token
 from railguey.lib.graphql import (
     _gql, _gql_bearer, _resolve_project, _resolve_service_id, _load_user_token,
 )
-from railguey.lib.doctor import doctor, doctor_service_level, doctor_project_level  # re-export
+from railguey.lib.doctor import doctor  # re-export
 
 
 # ---------------------------------------------------------------------------

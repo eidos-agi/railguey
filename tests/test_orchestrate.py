@@ -11,7 +11,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import pytest
 
 from railguey.lib.orchestrate import (
     registry, preflight, verify, deploy_plan,

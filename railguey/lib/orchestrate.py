@@ -142,7 +142,7 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
                 ["git", "status", "--porcelain"],
                 cwd=ws, capture_output=True, text=True, timeout=5,
             )
-            dirty_files = [l for l in result.stdout.strip().split("\n") if l.strip()]
+            dirty_files = [ln for ln in result.stdout.strip().split("\n") if ln.strip()]
             if not dirty_files:
                 checks.append({"check": "worktree", "status": "pass", "detail": "Clean"})
             else:
