@@ -1337,6 +1337,174 @@ async def service_update(
     }
 
 
+async def volume_create(
+    workspace: str,
+    service: str,
+    mount_path: str,
+) -> dict:
+    """Create a Railway volume and attach it to a service.
+
+    Uses the project-scoped token from workspace/.env.local. Confirmed
+    2026-04-15 that project tokens can execute volumeCreate — no account
+    token required (unlike serviceInstanceUpdate). Railway names the
+    volume `<service>-volume` automatically; default size is 50 GB.
+
+    After creation the service redeploys automatically with the volume
+    mounted at `mount_path`.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
+    query = """
+    mutation volumeCreate($input: VolumeCreateInput!) {
+      volumeCreate(input: $input) { id name createdAt }
+    }
+    """
+    result = await _gql(token, query, {
+        "input": {
+            "projectId": project_id,
+            "serviceId": service_id,
+            "environmentId": environment_id,
+            "mountPath": mount_path,
+        }
+    })
+    if "error" in result:
+        return result
+
+    vol = result.get("volumeCreate", {})
+    return {
+        "created": True,
+        "volumeId": vol.get("id", ""),
+        "volumeName": vol.get("name", ""),
+        "mountPath": mount_path,
+        "service": service,
+        "serviceId": service_id,
+        "createdAt": vol.get("createdAt", ""),
+    }
+
+
+async def volumes(workspace: str) -> dict:
+    """List all volumes in the Railway project with their mount state.
+
+    Returns each volume with its volume instances (one per environment).
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    if not project_id:
+        return {"error": "Could not resolve projectId from token"}
+
+    query = """
+    query project($id: String!) {
+      project(id: $id) {
+        volumes {
+          edges {
+            node {
+              id
+              name
+              createdAt
+              volumeInstances {
+                edges {
+                  node {
+                    id
+                    mountPath
+                    sizeMB
+                    state
+                    environmentId
+                    serviceId
+                    region
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    result = await _gql(token, query, {"id": project_id})
+    if "error" in result:
+        return result
+
+    out = []
+    edges = result.get("project", {}).get("volumes", {}).get("edges", [])
+    for edge in edges:
+        node = edge.get("node", {})
+        instances = [
+            inst_edge.get("node", {})
+            for inst_edge in node.get("volumeInstances", {}).get("edges", [])
+        ]
+        out.append({
+            "id": node.get("id", ""),
+            "name": node.get("name", ""),
+            "createdAt": node.get("createdAt", ""),
+            "instances": instances,
+        })
+    return {"count": len(out), "volumes": out}
+
+
+async def volume_delete(
+    workspace: str,
+    volume_id: str,
+) -> dict:
+    """Delete a Railway volume. Irreversible — all data on the volume is lost.
+
+    Matches the existing project_delete pattern (no TOTP gate at the library
+    layer; the destructive nature is documented in the tool docstring).
+    """
+    token = _load_token(workspace)
+    query = """
+    mutation volumeDelete($volumeId: String!) {
+      volumeDelete(volumeId: $volumeId)
+    }
+    """
+    result = await _gql(token, query, {"volumeId": volume_id})
+    if "error" in result:
+        return result
+    return {"deleted": True, "volumeId": volume_id}
+
+
+async def volume_resize(
+    workspace: str,
+    volume_instance_id: str,
+    size_mb: int,
+) -> dict:
+    """Resize a volume instance to a new size (MB). Railway requires
+    grow-only — you can increase but not shrink."""
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    environment_id = project.get("environmentId")
+    if not environment_id:
+        return {"error": "Could not resolve environmentId from token"}
+
+    query = """
+    mutation volumeInstanceUpdate($volumeInstanceId: String!, $input: VolumeInstanceUpdateInput!) {
+      volumeInstanceUpdate(volumeInstanceId: $volumeInstanceId, input: $input)
+    }
+    """
+    result = await _gql(token, query, {
+        "volumeInstanceId": volume_instance_id,
+        "input": {"sizeMB": size_mb},
+    })
+    if "error" in result:
+        return result
+    return {"resized": True, "volumeInstanceId": volume_instance_id, "sizeMB": size_mb}
+
+
 __all__ = [
     "status", "logs", "deploy", "variables", "variable_set", "services",
     "redeploy", "restart", "domain", "environment_create", "deployments",
@@ -1344,4 +1512,5 @@ __all__ = [
     "unlink_repo", "doctor", "project_create", "service_create",
     "list_workspaces", "list_projects", "project_delete", "project_transfer",
     "service_update",
+    "volume_create", "volumes", "volume_delete", "volume_resize",
 ]
