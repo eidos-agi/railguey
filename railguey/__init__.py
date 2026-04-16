@@ -11,4 +11,5 @@ except PackageNotFoundError:
 def run():
     """Entry point for `railguey-mcp` console script (backward compat)."""
     from railguey.mcp import mcp
+
     mcp.run()

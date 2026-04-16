@@ -170,7 +170,9 @@ def http_logs(workspace, service, deployment_id, limit):
 @click.option("--filter", "filter_str", default=None, help="Filter log lines.")
 def deployment_logs(workspace, deployment_id, limit, build, filter_str):
     """Get logs for a specific deployment by ID."""
-    _output(_run(tools.deployment_logs(workspace, deployment_id, limit, build, filter_str)))
+    _output(
+        _run(tools.deployment_logs(workspace, deployment_id, limit, build, filter_str))
+    )
 
 
 @main.command("unlink-repo")
@@ -197,4 +199,5 @@ def doctor(workspace):
 def serve():
     """Start the MCP server (for Claude Code, Cursor, etc.)."""
     from railguey.mcp import mcp
+
     mcp.run()

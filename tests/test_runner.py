@@ -22,8 +22,14 @@ class TestRunRailway:
     async def test_successful_command(self, workspace_with_token):
         proc = mock_railway_proc(stdout=b"service list output")
         with (
-            patch("railguey.lib.cli_backend.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("railguey.lib.cli_backend.asyncio.create_subprocess_exec", return_value=proc),
+            patch(
+                "railguey.lib.cli_backend.shutil.which",
+                return_value="/usr/local/bin/railway",
+            ),
+            patch(
+                "railguey.lib.cli_backend.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ),
         ):
             result = await _run_railway(str(workspace_with_token), ["status", "--json"])
         assert result == {"output": "service list output"}
@@ -32,8 +38,14 @@ class TestRunRailway:
     async def test_failed_command(self, workspace_with_token):
         proc = mock_railway_proc(stdout=b"", stderr=b"not authenticated", returncode=1)
         with (
-            patch("railguey.lib.cli_backend.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("railguey.lib.cli_backend.asyncio.create_subprocess_exec", return_value=proc),
+            patch(
+                "railguey.lib.cli_backend.shutil.which",
+                return_value="/usr/local/bin/railway",
+            ),
+            patch(
+                "railguey.lib.cli_backend.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ),
         ):
             result = await _run_railway(str(workspace_with_token), ["status"])
         assert "error" in result
@@ -50,10 +62,18 @@ class TestRunRailway:
         proc.communicate = slow_communicate
 
         with (
-            patch("railguey.lib.cli_backend.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("railguey.lib.cli_backend.asyncio.create_subprocess_exec", return_value=proc),
+            patch(
+                "railguey.lib.cli_backend.shutil.which",
+                return_value="/usr/local/bin/railway",
+            ),
+            patch(
+                "railguey.lib.cli_backend.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ),
         ):
-            result = await _run_railway(str(workspace_with_token), ["logs"], timeout=0.1)
+            result = await _run_railway(
+                str(workspace_with_token), ["logs"], timeout=0.1
+            )
         assert "error" in result
         assert "timed out" in result["error"]
 
@@ -67,8 +87,14 @@ class TestRunRailway:
             return proc
 
         with (
-            patch("railguey.lib.cli_backend.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("railguey.lib.cli_backend.asyncio.create_subprocess_exec", side_effect=capture_exec),
+            patch(
+                "railguey.lib.cli_backend.shutil.which",
+                return_value="/usr/local/bin/railway",
+            ),
+            patch(
+                "railguey.lib.cli_backend.asyncio.create_subprocess_exec",
+                side_effect=capture_exec,
+            ),
         ):
             await _run_railway(str(workspace_with_token), ["status"])
         assert captured_kwargs["env"]["RAILWAY_TOKEN"] == "test-token-123"
@@ -83,8 +109,14 @@ class TestRunRailway:
             return proc
 
         with (
-            patch("railguey.lib.cli_backend.shutil.which", return_value="/usr/local/bin/railway"),
-            patch("railguey.lib.cli_backend.asyncio.create_subprocess_exec", side_effect=capture_exec),
+            patch(
+                "railguey.lib.cli_backend.shutil.which",
+                return_value="/usr/local/bin/railway",
+            ),
+            patch(
+                "railguey.lib.cli_backend.asyncio.create_subprocess_exec",
+                side_effect=capture_exec,
+            ),
         ):
             await _run_railway(str(workspace_with_token), ["status"])
         expected = str(Path(str(workspace_with_token)).resolve())

@@ -21,6 +21,7 @@ def _load_token(workspace: str) -> str:
     # 1. Account system override
     try:
         from railguey.lib.accounts import get_account_token
+
         return get_account_token()
     except (ValueError, ImportError):
         pass

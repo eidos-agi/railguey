@@ -73,6 +73,7 @@ def _ascii_qr(data: str) -> str:
     """Generate a compact ASCII QR code using block characters."""
     try:
         import qrcode
+
         qr = qrcode.QRCode(box_size=1, border=1)
         qr.add_data(data)
         qr.make(fit=True)
@@ -185,13 +186,13 @@ def require_totp(code: str | None) -> dict | None:
     if not secret:
         return {
             "error": "TOTP not configured. Destructive operations require TOTP. "
-                     "Run railguey_totp_setup to configure."
+            "Run railguey_totp_setup to configure."
         }
 
     if not code:
         return {
             "error": "TOTP code required for this operation. "
-                     "Provide the current 6-digit code from your authenticator app."
+            "Provide the current 6-digit code from your authenticator app."
         }
 
     result = verify(code)

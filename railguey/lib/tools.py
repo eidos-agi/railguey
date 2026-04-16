@@ -13,7 +13,11 @@ from pathlib import Path
 
 from railguey.lib.token import _load_token
 from railguey.lib.graphql import (
-    _gql, _gql_bearer, _resolve_project, _resolve_service_id, _load_user_token,
+    _gql,
+    _gql_bearer,
+    _resolve_project,
+    _resolve_service_id,
+    _load_user_token,
 )
 from railguey.lib.doctor import doctor  # re-export
 
@@ -85,17 +89,18 @@ async def status(workspace: str) -> dict:
                 continue  # only show the token's environment
             latest = inst.get("latestDeployment") or {}
             domains_data = inst.get("domains", {}) or {}
-            all_domains = (
-                [d.get("domain", "") for d in domains_data.get("serviceDomains", [])]
-                + [d.get("domain", "") for d in domains_data.get("customDomains", [])]
+            all_domains = [
+                d.get("domain", "") for d in domains_data.get("serviceDomains", [])
+            ] + [d.get("domain", "") for d in domains_data.get("customDomains", [])]
+            services_out.append(
+                {
+                    "name": svc.get("name", "unknown"),
+                    "serviceId": svc.get("id", ""),
+                    "status": latest.get("status", "no deploys"),
+                    "deployedAt": latest.get("createdAt", ""),
+                    "domains": [d for d in all_domains if d],
+                }
             )
-            services_out.append({
-                "name": svc.get("name", "unknown"),
-                "serviceId": svc.get("id", ""),
-                "status": latest.get("status", "no deploys"),
-                "deployedAt": latest.get("createdAt", ""),
-                "domains": [d for d in all_domains if d],
-            })
 
     return {
         "project": proj.get("name", "unknown"),
@@ -150,7 +155,10 @@ async def pypi_status(packages: list[str] | None = None) -> dict:
             try:
                 result = subprocess.run(
                     ["git", "describe", "--tags", "--abbrev=0"],
-                    cwd=ws, capture_output=True, text=True, timeout=5,
+                    cwd=ws,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if result.returncode == 0:
                     entry["latest_tag"] = result.stdout.strip()
@@ -217,9 +225,9 @@ async def logs(
       }
     }
     """
-    dep_result = await _gql(token, dep_query, {
-        "input": {"projectId": project_id, "serviceId": service_id}
-    })
+    dep_result = await _gql(
+        token, dep_query, {"input": {"projectId": project_id, "serviceId": service_id}}
+    )
     if "error" in dep_result:
         return dep_result
     edges = dep_result.get("deployments", {}).get("edges", [])
@@ -287,10 +295,14 @@ async def deploy(workspace: str, service: str) -> dict:
       serviceInstanceRedeploy(environmentId: $environmentId, serviceId: $serviceId)
     }
     """
-    result = await _gql(token, query, {
-        "environmentId": environment_id,
-        "serviceId": service_id,
-    })
+    result = await _gql(
+        token,
+        query,
+        {
+            "environmentId": environment_id,
+            "serviceId": service_id,
+        },
+    )
     if "error" in result:
         return result
     return {"deployed": True, "service": service}
@@ -319,11 +331,15 @@ async def variables(workspace: str, service: str) -> dict:
       variables(environmentId: $environmentId, projectId: $projectId, serviceId: $serviceId)
     }
     """
-    result = await _gql(token, query, {
-        "environmentId": environment_id,
-        "projectId": project_id,
-        "serviceId": service_id,
-    })
+    result = await _gql(
+        token,
+        query,
+        {
+            "environmentId": environment_id,
+            "projectId": project_id,
+            "serviceId": service_id,
+        },
+    )
     if "error" in result:
         return result
     return {"variables": result.get("variables", {}), "service": service}
@@ -352,15 +368,19 @@ async def variable_set(workspace: str, service: str, key: str, value: str) -> di
       variableUpsert(input: $input)
     }
     """
-    result = await _gql(token, query, {
-        "input": {
-            "environmentId": environment_id,
-            "projectId": project_id,
-            "serviceId": service_id,
-            "name": key,
-            "value": value,
-        }
-    })
+    result = await _gql(
+        token,
+        query,
+        {
+            "input": {
+                "environmentId": environment_id,
+                "projectId": project_id,
+                "serviceId": service_id,
+                "name": key,
+                "value": value,
+            }
+        },
+    )
     if "error" in result:
         return result
     return {"set": True, "key": key, "service": service}
@@ -420,9 +440,9 @@ async def redeploy(workspace: str, service: str) -> dict:
       }
     }
     """
-    dep_result = await _gql(token, dep_query, {
-        "input": {"projectId": project_id, "serviceId": service_id}
-    })
+    dep_result = await _gql(
+        token, dep_query, {"input": {"projectId": project_id, "serviceId": service_id}}
+    )
     if "error" in dep_result:
         return dep_result
     edges = dep_result.get("deployments", {}).get("edges", [])
@@ -473,9 +493,9 @@ async def restart(workspace: str, service: str) -> dict:
       }
     }
     """
-    dep_result = await _gql(token, dep_query, {
-        "input": {"projectId": project_id, "serviceId": service_id}
-    })
+    dep_result = await _gql(
+        token, dep_query, {"input": {"projectId": project_id, "serviceId": service_id}}
+    )
     if "error" in dep_result:
         return dep_result
     edges = dep_result.get("deployments", {}).get("edges", [])
@@ -539,7 +559,11 @@ async def domain(
             }
         # Update the target port on the existing domain
         return await _update_domain_port(
-            existing, service_id, environment_id, service, port,
+            existing,
+            service_id,
+            environment_id,
+            service,
+            port,
         )
 
     # Domain does not exist — create it
@@ -608,10 +632,14 @@ async def _find_existing_domain(
       }
     }
     """
-    result = await _gql(token, query, {
-        "serviceId": service_id,
-        "environmentId": environment_id,
-    })
+    result = await _gql(
+        token,
+        query,
+        {
+            "serviceId": service_id,
+            "environmentId": environment_id,
+        },
+    )
     if "error" in result:
         return None
 
@@ -713,9 +741,9 @@ async def environment_create(workspace: str, name: str) -> dict:
       environmentCreate(input: $input) { id name }
     }
     """
-    result = await _gql(token, query, {
-        "input": {"name": name, "projectId": project_id}
-    })
+    result = await _gql(
+        token, query, {"input": {"name": name, "projectId": project_id}}
+    )
     if "error" in result:
         return result
     env = result.get("environmentCreate", {})
@@ -815,10 +843,14 @@ async def service_info(workspace: str, service: str) -> dict:
       }
     }
     """
-    result = await _gql(token, query, {
-        "serviceId": service_id,
-        "environmentId": environment_id,
-    })
+    result = await _gql(
+        token,
+        query,
+        {
+            "serviceId": service_id,
+            "environmentId": environment_id,
+        },
+    )
     if "error" in result:
         return result
     return result.get("serviceInstance", {})
@@ -851,9 +883,11 @@ async def http_logs(
           }
         }
         """
-        dep_result = await _gql(token, dep_query, {
-            "input": {"projectId": project_id, "serviceId": service_id}
-        })
+        dep_result = await _gql(
+            token,
+            dep_query,
+            {"input": {"projectId": project_id, "serviceId": service_id}},
+        )
         if "error" in dep_result:
             return dep_result
         edges = dep_result.get("deployments", {}).get("edges", [])
@@ -878,7 +912,11 @@ async def http_logs(
     if "error" in result:
         return result
     log_entries = result.get("httpLogs", [])
-    return {"logs": log_entries, "count": len(log_entries), "deployment_id": deployment_id}
+    return {
+        "logs": log_entries,
+        "count": len(log_entries),
+        "deployment_id": deployment_id,
+    }
 
 
 async def deployment_logs(
@@ -1044,8 +1082,8 @@ async def project_create(
     if not team_id:
         return {
             "error": "team_id is required. Use railguey_workspaces to list available "
-                     "teams, then pass the team ID. Railguey never creates projects "
-                     "without an explicit team to prevent accidental personal-account deploys."
+            "teams, then pass the team ID. Railguey never creates projects "
+            "without an explicit team to prevent accidental personal-account deploys."
         }
 
     user_token = _load_user_token(account)
@@ -1060,9 +1098,9 @@ async def project_create(
       }
     }
     """
-    result = await _gql_bearer(user_token, create_query, {
-        "input": {"name": name, "workspaceId": team_id}
-    })
+    result = await _gql_bearer(
+        user_token, create_query, {"input": {"name": name, "workspaceId": team_id}}
+    )
     if "error" in result:
         return result
 
@@ -1081,13 +1119,17 @@ async def project_create(
       projectTokenCreate(input: $input)
     }
     """
-    token_result = await _gql_bearer(user_token, token_query, {
-        "input": {
-            "projectId": project_id,
-            "environmentId": env_id,
-            "name": f"railguey-{name}",
-        }
-    })
+    token_result = await _gql_bearer(
+        user_token,
+        token_query,
+        {
+            "input": {
+                "projectId": project_id,
+                "environmentId": env_id,
+                "name": f"railguey-{name}",
+            }
+        },
+    )
     project_token = ""
     if "error" not in token_result:
         project_token = token_result.get("projectTokenCreate", "")
@@ -1107,7 +1149,8 @@ async def project_create(
         "teamId": team_id,
         "environmentId": env_id,
         "environmentName": env_name,
-        "projectToken": project_token or "(failed to create — create manually in Railway dashboard)",
+        "projectToken": project_token
+        or "(failed to create — create manually in Railway dashboard)",
         "envLocalWritten": env_local_written,
         "workspace": workspace or "(not specified)",
     }
@@ -1136,9 +1179,9 @@ async def service_create(
       serviceCreate(input: $input) { id name }
     }
     """
-    result = await _gql(token, query, {
-        "input": {"name": name, "projectId": project_id}
-    })
+    result = await _gql(
+        token, query, {"input": {"name": name, "projectId": project_id}}
+    )
     if "error" in result:
         return result
 
@@ -1177,7 +1220,11 @@ async def list_projects(
     ws = result.get("workspace", {})
     edges = ws.get("projects", {}).get("edges", [])
     projects = [
-        {"id": e["node"]["id"], "name": e["node"]["name"], "updatedAt": e["node"].get("updatedAt", "")}
+        {
+            "id": e["node"]["id"],
+            "name": e["node"]["name"],
+            "updatedAt": e["node"].get("updatedAt", ""),
+        }
         for e in edges
     ]
     return {"workspace": ws.get("name", ""), "teamId": team_id, "projects": projects}
@@ -1223,11 +1270,17 @@ async def project_transfer(
       projectTransferToTeam(id: $id, teamId: $teamId) { id name }
     }
     """
-    result = await _gql_bearer(user_token, query, {"id": project_id, "teamId": target_team_id})
+    result = await _gql_bearer(
+        user_token, query, {"id": project_id, "teamId": target_team_id}
+    )
     if "error" in result:
         return result
     proj = result.get("projectTransferToTeam", {})
-    return {"transferred": True, "projectId": proj.get("id", project_id), "targetTeamId": target_team_id}
+    return {
+        "transferred": True,
+        "projectId": proj.get("id", project_id),
+        "targetTeamId": target_team_id,
+    }
 
 
 async def service_update(
@@ -1287,7 +1340,9 @@ async def service_update(
             gql_input[camel] = val
 
     if not gql_input:
-        return {"error": "No fields to update. Provide at least one field (healthcheck_path, start_command, etc.)."}
+        return {
+            "error": "No fields to update. Provide at least one field (healthcheck_path, start_command, etc.)."
+        }
 
     # Step 1: Use project token to resolve IDs
     token = _load_token(workspace)
@@ -1321,11 +1376,15 @@ async def service_update(
       serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
     }
     """
-    result = await _gql_bearer(user_token, query, {
-        "serviceId": service_id,
-        "environmentId": environment_id,
-        "input": gql_input,
-    })
+    result = await _gql_bearer(
+        user_token,
+        query,
+        {
+            "serviceId": service_id,
+            "environmentId": environment_id,
+            "input": gql_input,
+        },
+    )
     if "error" in result:
         return result
 
@@ -1370,14 +1429,18 @@ async def volume_create(
       volumeCreate(input: $input) { id name createdAt }
     }
     """
-    result = await _gql(token, query, {
-        "input": {
-            "projectId": project_id,
-            "serviceId": service_id,
-            "environmentId": environment_id,
-            "mountPath": mount_path,
-        }
-    })
+    result = await _gql(
+        token,
+        query,
+        {
+            "input": {
+                "projectId": project_id,
+                "serviceId": service_id,
+                "environmentId": environment_id,
+                "mountPath": mount_path,
+            }
+        },
+    )
     if "error" in result:
         return result
 
@@ -1446,12 +1509,14 @@ async def volumes(workspace: str) -> dict:
             inst_edge.get("node", {})
             for inst_edge in node.get("volumeInstances", {}).get("edges", [])
         ]
-        out.append({
-            "id": node.get("id", ""),
-            "name": node.get("name", ""),
-            "createdAt": node.get("createdAt", ""),
-            "instances": instances,
-        })
+        out.append(
+            {
+                "id": node.get("id", ""),
+                "name": node.get("name", ""),
+                "createdAt": node.get("createdAt", ""),
+                "instances": instances,
+            }
+        )
     return {"count": len(out), "volumes": out}
 
 
@@ -1496,21 +1561,46 @@ async def volume_resize(
       volumeInstanceUpdate(volumeInstanceId: $volumeInstanceId, input: $input)
     }
     """
-    result = await _gql(token, query, {
-        "volumeInstanceId": volume_instance_id,
-        "input": {"sizeMB": size_mb},
-    })
+    result = await _gql(
+        token,
+        query,
+        {
+            "volumeInstanceId": volume_instance_id,
+            "input": {"sizeMB": size_mb},
+        },
+    )
     if "error" in result:
         return result
     return {"resized": True, "volumeInstanceId": volume_instance_id, "sizeMB": size_mb}
 
 
 __all__ = [
-    "status", "logs", "deploy", "variables", "variable_set", "services",
-    "redeploy", "restart", "domain", "environment_create", "deployments",
-    "rollback", "service_info", "http_logs", "deployment_logs",
-    "unlink_repo", "doctor", "project_create", "service_create",
-    "list_workspaces", "list_projects", "project_delete", "project_transfer",
+    "status",
+    "logs",
+    "deploy",
+    "variables",
+    "variable_set",
+    "services",
+    "redeploy",
+    "restart",
+    "domain",
+    "environment_create",
+    "deployments",
+    "rollback",
+    "service_info",
+    "http_logs",
+    "deployment_logs",
+    "unlink_repo",
+    "doctor",
+    "project_create",
+    "service_create",
+    "list_workspaces",
+    "list_projects",
+    "project_delete",
+    "project_transfer",
     "service_update",
-    "volume_create", "volumes", "volume_delete", "volume_resize",
+    "volume_create",
+    "volumes",
+    "volume_delete",
+    "volume_resize",
 ]

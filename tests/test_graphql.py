@@ -4,21 +4,35 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from railguey.lib.graphql import _gql, _resolve_project, _resolve_service_id
-from tests.helpers import mock_httpx_response, mock_httpx_client, PROJECT_DATA, SERVICES_DATA
+from tests.helpers import (
+    mock_httpx_response,
+    mock_httpx_client,
+    PROJECT_DATA,
+    SERVICES_DATA,
+)
 
 
 class TestGql:
     @pytest.mark.asyncio
     async def test_successful_query(self):
-        resp = mock_httpx_response({
-            "data": {"projectToken": {"projectId": "proj-123", "environmentId": "env-456"}}
-        })
+        resp = mock_httpx_response(
+            {
+                "data": {
+                    "projectToken": {
+                        "projectId": "proj-123",
+                        "environmentId": "env-456",
+                    }
+                }
+            }
+        )
         client = mock_httpx_client(resp)
 
         with patch("railguey.lib.graphql.httpx.AsyncClient", return_value=client):
             result = await _gql("token", "query { projectToken { projectId } }")
 
-        assert result == {"projectToken": {"projectId": "proj-123", "environmentId": "env-456"}}
+        assert result == {
+            "projectToken": {"projectId": "proj-123", "environmentId": "env-456"}
+        }
 
     @pytest.mark.asyncio
     async def test_graphql_error(self):
@@ -87,7 +101,9 @@ class TestResolveServiceId:
         with patch("railguey.lib.graphql._gql", new_callable=AsyncMock) as mock:
             mock.return_value = {
                 "project": {
-                    "services": {"edges": [{"node": {"id": "svc-111", "name": "Cerebro"}}]}
+                    "services": {
+                        "edges": [{"node": {"id": "svc-111", "name": "Cerebro"}}]
+                    }
                 }
             }
             result = await _resolve_service_id("token", "proj-abc", "cerebro")

@@ -298,11 +298,14 @@ async def railguey_doctor(workspace: str) -> dict:
         workspace: Absolute path to project directory to audit.
     """
     from railguey.lib.doctor import doctor
+
     return await doctor(workspace)
 
 
 @mcp.tool()
-async def railguey_doctor_service_level(workspace: str, service: str | None = None) -> dict:
+async def railguey_doctor_service_level(
+    workspace: str, service: str | None = None
+) -> dict:
     """Check a single service's Railway deployment health.
 
     Checks:
@@ -319,6 +322,7 @@ async def railguey_doctor_service_level(workspace: str, service: str | None = No
         service: Service name (auto-detected if omitted).
     """
     from railguey.lib.doctor import doctor_service_level
+
     return await doctor_service_level(workspace, service)
 
 
@@ -339,11 +343,14 @@ async def railguey_doctor_project_level(workspace: str) -> dict:
         workspace: Absolute path to project directory (for token).
     """
     from railguey.lib.doctor import doctor_project_level
+
     return await doctor_project_level(workspace)
 
 
 @mcp.tool()
-async def railguey_account_add(name: str, token: str, email: Optional[str] = None) -> dict:
+async def railguey_account_add(
+    name: str, token: str, email: Optional[str] = None
+) -> dict:
     """Register a Railway account token for multi-account support.
 
     Store tokens from multiple Railway accounts. Each gets a name you
@@ -545,7 +552,8 @@ async def railguey_service_update(
         restart_policy_max_retries: Max restart retries (used with ON_FAILURE).
     """
     return await tools.service_update(
-        workspace, service,
+        workspace,
+        service,
         healthcheck_path=healthcheck_path,
         start_command=start_command,
         build_command=build_command,

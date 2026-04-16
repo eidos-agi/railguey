@@ -106,10 +106,23 @@ class TestCLI:
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
         expected = [
-            "status", "logs", "deploy", "redeploy", "restart",
-            "variables", "variable-set", "domain", "deployments",
-            "rollback", "service-info", "http-logs", "deployment-logs",
-            "unlink-repo", "environment-create", "doctor", "serve",
+            "status",
+            "logs",
+            "deploy",
+            "redeploy",
+            "restart",
+            "variables",
+            "variable-set",
+            "domain",
+            "deployments",
+            "rollback",
+            "service-info",
+            "http-logs",
+            "deployment-logs",
+            "unlink-repo",
+            "environment-create",
+            "doctor",
+            "serve",
         ]
         for cmd in expected:
             assert cmd in result.output, f"Missing command: {cmd}"
