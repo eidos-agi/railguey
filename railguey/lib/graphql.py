@@ -23,7 +23,10 @@ async def _gql(token: str, query: str, variables: dict | None = None) -> dict:
             resp = await client.post(BACKBOARD_URL, headers=headers, json=payload)
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            return {"error": f"Backboard API returned {exc.response.status_code}", "body": exc.response.text}
+            return {
+                "error": f"Backboard API returned {exc.response.status_code}",
+                "body": exc.response.text,
+            }
         except httpx.RequestError as exc:
             return {"error": f"Request failed: {exc}"}
 
@@ -52,7 +55,10 @@ async def _gql_bearer(token: str, query: str, variables: dict | None = None) -> 
             resp = await client.post(BACKBOARD_URL, headers=headers, json=payload)
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            return {"error": f"Backboard API returned {exc.response.status_code}", "body": exc.response.text}
+            return {
+                "error": f"Backboard API returned {exc.response.status_code}",
+                "body": exc.response.text,
+            }
         except httpx.RequestError as exc:
             return {"error": f"Request failed: {exc}"}
 
@@ -72,6 +78,7 @@ def _load_user_token(account: str | None = None) -> str:
     4. ~/.railway/config.json (CLI fallback)
     """
     from railguey.lib.accounts import get_account_token
+
     return get_account_token(account)
 
 
@@ -83,7 +90,9 @@ async def _resolve_project(token: str) -> dict:
     return result.get("projectToken", {})
 
 
-async def _resolve_service_id(token: str, project_id: str, service_name: str) -> str | None:
+async def _resolve_service_id(
+    token: str, project_id: str, service_name: str
+) -> str | None:
     """Resolve a service name to its ID within a project."""
     query = """
     query project($id: String!) {

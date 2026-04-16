@@ -14,6 +14,7 @@ from tests.helpers import write_file
 # Isolate tests from the host account system (~/.railguey/accounts.json)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _no_account_system():
     """Prevent tests from reading the real ~/.railguey/accounts.json."""

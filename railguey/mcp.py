@@ -298,11 +298,14 @@ async def railguey_doctor(workspace: str) -> dict:
         workspace: Absolute path to project directory to audit.
     """
     from railguey.lib.doctor import doctor
+
     return await doctor(workspace)
 
 
 @mcp.tool()
-async def railguey_doctor_service_level(workspace: str, service: str | None = None) -> dict:
+async def railguey_doctor_service_level(
+    workspace: str, service: str | None = None
+) -> dict:
     """Check a single service's Railway deployment health.
 
     Checks:
@@ -319,6 +322,7 @@ async def railguey_doctor_service_level(workspace: str, service: str | None = No
         service: Service name (auto-detected if omitted).
     """
     from railguey.lib.doctor import doctor_service_level
+
     return await doctor_service_level(workspace, service)
 
 
@@ -339,11 +343,14 @@ async def railguey_doctor_project_level(workspace: str) -> dict:
         workspace: Absolute path to project directory (for token).
     """
     from railguey.lib.doctor import doctor_project_level
+
     return await doctor_project_level(workspace)
 
 
 @mcp.tool()
-async def railguey_account_add(name: str, token: str, email: Optional[str] = None) -> dict:
+async def railguey_account_add(
+    name: str, token: str, email: Optional[str] = None
+) -> dict:
     """Register a Railway account token for multi-account support.
 
     Store tokens from multiple Railway accounts. Each gets a name you
@@ -545,7 +552,8 @@ async def railguey_service_update(
         restart_policy_max_retries: Max restart retries (used with ON_FAILURE).
     """
     return await tools.service_update(
-        workspace, service,
+        workspace,
+        service,
         healthcheck_path=healthcheck_path,
         start_command=start_command,
         build_command=build_command,
@@ -650,6 +658,79 @@ async def railguey_deploy_plan(repos: list[str]) -> dict:
         repos: List of repo names with changes (e.g. ["data-daemon", "cerebro-migrations"]).
     """
     return await orchestrate.deploy_plan(repos)
+
+
+@mcp.tool()
+async def railguey_volume_create(
+    workspace: str,
+    service: str,
+    mount_path: str,
+) -> dict:
+    """Create a Railway volume and attach it to a service.
+
+    Uses the project-scoped token. Confirmed 2026-04-15 that project
+    tokens CAN execute volumeCreate — this was a known unknown before.
+    Railway auto-names the volume `<service>-volume` and defaults to
+    50 GB. The service redeploys automatically once the volume is
+    attached and mounted at `mount_path`.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name to attach the volume to.
+        mount_path: Path inside the container where the volume mounts
+                    (e.g. "/data", "/var/lib/sqlite").
+    """
+    return await tools.volume_create(workspace, service, mount_path)
+
+
+@mcp.tool()
+async def railguey_volumes(workspace: str) -> dict:
+    """List all volumes in the Railway project.
+
+    Returns each volume with its volume instances (one per environment
+    the volume is deployed to), including mount path, size in MB,
+    state, service binding, and region.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+    """
+    return await tools.volumes(workspace)
+
+
+@mcp.tool()
+async def railguey_volume_delete(
+    workspace: str,
+    volume_id: str,
+) -> dict:
+    """Delete a Railway volume. Irreversible — all data on the volume is lost.
+
+    Use railguey_volumes first to find the volume ID.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        volume_id: The volume ID from railguey_volumes.
+    """
+    return await tools.volume_delete(workspace, volume_id)
+
+
+@mcp.tool()
+async def railguey_volume_resize(
+    workspace: str,
+    volume_instance_id: str,
+    size_mb: int,
+) -> dict:
+    """Resize a volume instance to a new size in MB. Grow-only — Railway
+    does not allow shrinking a volume.
+
+    Use railguey_volumes first to find the volume instance ID (each
+    volume has one instance per environment it's deployed to).
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        volume_instance_id: The volume instance ID from railguey_volumes.
+        size_mb: New size in megabytes. Must be larger than current size.
+    """
+    return await tools.volume_resize(workspace, volume_instance_id, size_mb)
 
 
 if __name__ == "__main__":

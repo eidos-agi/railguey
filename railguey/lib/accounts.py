@@ -72,7 +72,10 @@ def list_accounts() -> dict:
     config = _load_config()
     return {
         "accounts": {
-            name: {"email": acct.get("email", ""), "workspaces": acct.get("workspaces", {})}
+            name: {
+                "email": acct.get("email", ""),
+                "workspaces": acct.get("workspaces", {}),
+            }
             for name, acct in config["accounts"].items()
         },
         "default_account": config.get("default_account"),
@@ -149,7 +152,9 @@ def set_default_workspace(account_name: str, workspace_id: str) -> dict:
     return {"account": account_name, "default_workspace_id": workspace_id}
 
 
-def get_workspace_id(account_name: Optional[str] = None, workspace_name: Optional[str] = None) -> Optional[str]:
+def get_workspace_id(
+    account_name: Optional[str] = None, workspace_name: Optional[str] = None
+) -> Optional[str]:
     """Resolve workspace ID from account + workspace name."""
     config = _load_config()
     acct_name = account_name or config.get("default_account")

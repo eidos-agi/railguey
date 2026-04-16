@@ -211,7 +211,9 @@ class TestDeploymentsReal:
             }
             """
             svc_result = await _gql(token, query, {"id": project["projectId"]})
-            services = svc_result.get("project", {}).get("services", {}).get("edges", [])
+            services = (
+                svc_result.get("project", {}).get("services", {}).get("edges", [])
+            )
             if services:
                 svc_name = services[0]["node"]["name"]
                 result = await deployments(ws, service=svc_name, limit=3)
@@ -244,7 +246,9 @@ class TestDeploymentsReal:
             }
             """
             svc_result = await _gql(token, query, {"id": project["projectId"]})
-            services = svc_result.get("project", {}).get("services", {}).get("edges", [])
+            services = (
+                svc_result.get("project", {}).get("services", {}).get("edges", [])
+            )
             if not services:
                 results.append(f"  SKIP {name}: no services")
                 continue
@@ -296,7 +300,9 @@ class TestServiceInfoReal:
         print(f"  Health: {info.get('healthcheckPath', 'none')}")
         latest = info.get("latestDeployment", {})
         if latest:
-            print(f"  Latest: {latest.get('status', '?')} @ {latest.get('createdAt', '?')[:19]}")
+            print(
+                f"  Latest: {latest.get('status', '?')} @ {latest.get('createdAt', '?')[:19]}"
+            )
 
 
 @skip_no_workspaces
@@ -310,7 +316,9 @@ class TestDoctorReal:
         assert "findings" in result
         assert "score" in result
         name = Path(workspace).name
-        print(f"\n  {name}: {result['score']} {'HEALTHY' if result['healthy'] else 'ISSUES'}")
+        print(
+            f"\n  {name}: {result['score']} {'HEALTHY' if result['healthy'] else 'ISSUES'}"
+        )
         for f in result["findings"]:
             status = f["status"].upper()
             print(f"    [{status:4}] {f['check']}: {f['message']}")

@@ -24,7 +24,9 @@ async def _run_railway(
     """
     railway = shutil.which("railway")
     if not railway:
-        return {"error": "Railway CLI not found. Install it: https://docs.railway.com/guides/cli"}
+        return {
+            "error": "Railway CLI not found. Install it: https://docs.railway.com/guides/cli"
+        }
 
     token = _load_token(workspace)
     env = {**os.environ, "RAILWAY_TOKEN": token}
@@ -41,7 +43,9 @@ async def _run_railway(
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
-        return {"error": f"Command timed out after {timeout}s: railway {' '.join(args)}"}
+        return {
+            "error": f"Command timed out after {timeout}s: railway {' '.join(args)}"
+        }
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -49,6 +53,10 @@ async def _run_railway(
     err = stderr.decode().strip() if stderr else ""
 
     if proc.returncode != 0:
-        return {"error": f"railway exited {proc.returncode}", "stderr": err, "output": out}
+        return {
+            "error": f"railway exited {proc.returncode}",
+            "stderr": err,
+            "output": out,
+        }
 
     return {"output": out}

@@ -19,19 +19,22 @@ class TestParseWorkflowDetails:
 
     def test_single_branch_single_env(self, tmp_path):
         wf_dir = tmp_path / ".github" / "workflows"
-        write_file(wf_dir / "deploy.yml", (
-            "name: Deploy\n"
-            "on:\n"
-            "  push:\n"
-            "    branches: [main]\n"
-            "jobs:\n"
-            "  deploy:\n"
-            "    runs-on: ubuntu-latest\n"
-            "    steps:\n"
-            "      - run: railway up --service cerebro --environment production --detach\n"
-            "        env:\n"
-            "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
-        ))
+        write_file(
+            wf_dir / "deploy.yml",
+            (
+                "name: Deploy\n"
+                "on:\n"
+                "  push:\n"
+                "    branches: [main]\n"
+                "jobs:\n"
+                "  deploy:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - run: railway up --service cerebro --environment production --detach\n"
+                "        env:\n"
+                "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
+            ),
+        )
         result = _parse_workflow_details(wf_dir)
         assert result["found"] is True
         assert result["branches"] == ["main"]
@@ -40,24 +43,27 @@ class TestParseWorkflowDetails:
 
     def test_multi_branch_multi_env(self, tmp_path):
         wf_dir = tmp_path / ".github" / "workflows"
-        write_file(wf_dir / "deploy.yml", (
-            "name: Deploy\n"
-            "on:\n"
-            "  push:\n"
-            "    branches: [main, develop]\n"
-            "jobs:\n"
-            "  deploy:\n"
-            "    runs-on: ubuntu-latest\n"
-            "    steps:\n"
-            "      - run: |\n"
-            "          if [ branch = main ]; then\n"
-            "            railway up --service cerebro --environment production --detach\n"
-            "          else\n"
-            "            railway up --service cerebro --environment develop --detach\n"
-            "          fi\n"
-            "        env:\n"
-            "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
-        ))
+        write_file(
+            wf_dir / "deploy.yml",
+            (
+                "name: Deploy\n"
+                "on:\n"
+                "  push:\n"
+                "    branches: [main, develop]\n"
+                "jobs:\n"
+                "  deploy:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - run: |\n"
+                "          if [ branch = main ]; then\n"
+                "            railway up --service cerebro --environment production --detach\n"
+                "          else\n"
+                "            railway up --service cerebro --environment develop --detach\n"
+                "          fi\n"
+                "        env:\n"
+                "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
+            ),
+        )
         result = _parse_workflow_details(wf_dir)
         assert result["found"] is True
         assert sorted(result["branches"]) == ["develop", "main"]
@@ -67,21 +73,24 @@ class TestParseWorkflowDetails:
     def test_single_branch_but_multi_env_detected(self, tmp_path):
         """Workflow targets 2 environments but only triggers on 1 branch."""
         wf_dir = tmp_path / ".github" / "workflows"
-        write_file(wf_dir / "deploy.yml", (
-            "name: Deploy\n"
-            "on:\n"
-            "  push:\n"
-            "    branches: [main]\n"
-            "jobs:\n"
-            "  deploy:\n"
-            "    runs-on: ubuntu-latest\n"
-            "    steps:\n"
-            "      - run: |\n"
-            "          railway up --service cerebro --environment production --detach\n"
-            "          railway up --service cerebro --environment develop --detach\n"
-            "        env:\n"
-            "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
-        ))
+        write_file(
+            wf_dir / "deploy.yml",
+            (
+                "name: Deploy\n"
+                "on:\n"
+                "  push:\n"
+                "    branches: [main]\n"
+                "jobs:\n"
+                "  deploy:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - run: |\n"
+                "          railway up --service cerebro --environment production --detach\n"
+                "          railway up --service cerebro --environment develop --detach\n"
+                "        env:\n"
+                "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
+            ),
+        )
         result = _parse_workflow_details(wf_dir)
         assert result["branches"] == ["main"]
         assert result["environments"] == ["develop", "production"]
@@ -89,19 +98,22 @@ class TestParseWorkflowDetails:
     def test_no_environment_flag(self, tmp_path):
         """Workflow without --environment is a simple single-env setup."""
         wf_dir = tmp_path / ".github" / "workflows"
-        write_file(wf_dir / "deploy.yml", (
-            "name: Deploy\n"
-            "on:\n"
-            "  push:\n"
-            "    branches: [main]\n"
-            "jobs:\n"
-            "  deploy:\n"
-            "    runs-on: ubuntu-latest\n"
-            "    steps:\n"
-            "      - run: railway up --service web --detach\n"
-            "        env:\n"
-            "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
-        ))
+        write_file(
+            wf_dir / "deploy.yml",
+            (
+                "name: Deploy\n"
+                "on:\n"
+                "  push:\n"
+                "    branches: [main]\n"
+                "jobs:\n"
+                "  deploy:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - run: railway up --service web --detach\n"
+                "        env:\n"
+                "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n"
+            ),
+        )
         result = _parse_workflow_details(wf_dir)
         assert result["found"] is True
         assert result["environments"] == []
@@ -131,14 +143,10 @@ def _mock_project_and_envs(token_env_name="production"):
                     for eid, ename in env_map.items()
                 ]
             },
-            "services": {
-                "edges": [{"node": {"id": "svc-1", "name": "cerebro"}}]
-            },
+            "services": {"edges": [{"node": {"id": "svc-1", "name": "cerebro"}}]},
         }
     }
-    gql_service = {
-        "service": {"id": "svc-1", "name": "cerebro", "repoTriggers": []}
-    }
+    gql_service = {"service": {"id": "svc-1", "name": "cerebro", "repoTriggers": []}}
     return project_return, [gql_project, gql_service]
 
 
@@ -152,7 +160,9 @@ class TestDoctor:
 
     @pytest.mark.asyncio
     async def test_token_present_passes(self, workspace_with_token):
-        with patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj:
+        with patch(
+            "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+        ) as mock_proj:
             mock_proj.return_value = {"error": "skip"}
             result = await doctor(str(workspace_with_token))
         checks = {f["check"]: f for f in result["workspace"]["findings"]}
@@ -160,7 +170,9 @@ class TestDoctor:
 
     @pytest.mark.asyncio
     async def test_gitignore_missing_warns(self, workspace_with_token):
-        with patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj:
+        with patch(
+            "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+        ) as mock_proj:
             mock_proj.return_value = {"error": "skip"}
             result = await doctor(str(workspace_with_token))
         checks = {f["check"]: f for f in result["workspace"]["findings"]}
@@ -169,16 +181,22 @@ class TestDoctor:
     @pytest.mark.asyncio
     async def test_gitignore_with_env_local_passes(self, workspace_with_token):
         write_file(workspace_with_token / ".gitignore", "node_modules/\n.env.local\n")
-        with patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj:
+        with patch(
+            "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+        ) as mock_proj:
             mock_proj.return_value = {"error": "skip"}
             result = await doctor(str(workspace_with_token))
         checks = {f["check"]: f for f in result["workspace"]["findings"]}
         assert checks[".gitignore"]["status"] == "pass"
 
-    @pytest.mark.xfail(reason="Pre-existing: doctor result structure changed to nested workspace/service/project")
+    @pytest.mark.xfail(
+        reason="Pre-existing: doctor result structure changed to nested workspace/service/project"
+    )
     @pytest.mark.asyncio
     async def test_deploy_workflow_detected(self, workspace_healthy):
-        with patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj:
+        with patch(
+            "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+        ) as mock_proj:
             mock_proj.return_value = {"error": "skip"}
             result = await doctor(str(workspace_healthy))
         checks = {f["check"]: f for f in result["workspace"]["findings"]}
@@ -187,33 +205,47 @@ class TestDoctor:
     @pytest.mark.asyncio
     async def test_no_deploy_workflow_warns(self, workspace_with_token):
         write_file(workspace_with_token / ".gitignore", ".env.local\n")
-        with patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj:
+        with patch(
+            "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+        ) as mock_proj:
             mock_proj.return_value = {"error": "skip"}
             result = await doctor(str(workspace_with_token))
         checks = {f["check"]: f for f in result["workspace"]["findings"]}
         assert checks["CI/CD workflow"]["status"] == "warn"
 
-    @pytest.mark.xfail(reason="Pre-existing: doctor result structure changed to nested workspace/service/project")
+    @pytest.mark.xfail(
+        reason="Pre-existing: doctor result structure changed to nested workspace/service/project"
+    )
     @pytest.mark.asyncio
     async def test_perfect_score_single_env(self, workspace_healthy):
         """Single-environment workflow — 6/6."""
         with (
-            patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj,
+            patch(
+                "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+            ) as mock_proj,
             patch("railguey.lib.doctor._gql", new_callable=AsyncMock) as mock_gql,
         ):
             mock_proj.return_value = {"projectId": "proj-1", "environmentId": "env-1"}
             mock_gql.side_effect = [
-                {"project": {
-                    "environments": {"edges": [{"node": {"id": "env-1", "name": "production"}}]},
-                    "services": {"edges": [{"node": {"id": "svc-1", "name": "web"}}]},
-                }},
+                {
+                    "project": {
+                        "environments": {
+                            "edges": [{"node": {"id": "env-1", "name": "production"}}]
+                        },
+                        "services": {
+                            "edges": [{"node": {"id": "svc-1", "name": "web"}}]
+                        },
+                    }
+                },
                 {"service": {"id": "svc-1", "name": "web", "repoTriggers": []}},
             ]
             result = await doctor(str(workspace_healthy))
         assert result["workspace"]["score"] == "6/6"
         assert result["workspace"]["healthy"] is True
 
-    @pytest.mark.xfail(reason="Pre-existing: doctor result structure changed to nested workspace/service/project")
+    @pytest.mark.xfail(
+        reason="Pre-existing: doctor result structure changed to nested workspace/service/project"
+    )
     @pytest.mark.asyncio
     async def test_perfect_score_multi_env(self, workspace_with_token):
         """Multi-environment workflow with correct token scope — 6/6."""
@@ -236,7 +268,9 @@ class TestDoctor:
         )
         proj_return, gql_calls = _mock_project_and_envs("production")
         with (
-            patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj,
+            patch(
+                "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+            ) as mock_proj,
             patch("railguey.lib.doctor._gql", new_callable=AsyncMock) as mock_gql,
         ):
             mock_proj.return_value = proj_return
@@ -247,7 +281,9 @@ class TestDoctor:
         assert checks["Token environment scope"]["status"] == "fail"
         assert "develop" in checks["Token environment scope"]["message"]
 
-    @pytest.mark.xfail(reason="Pre-existing: doctor result structure changed to nested workspace/service/project")
+    @pytest.mark.xfail(
+        reason="Pre-existing: doctor result structure changed to nested workspace/service/project"
+    )
     @pytest.mark.asyncio
     async def test_token_scope_mismatch_fails(self, workspace_with_token):
         """Token scoped to production, workflow targets both — should fail check 5."""
@@ -270,7 +306,9 @@ class TestDoctor:
         )
         proj_return, gql_calls = _mock_project_and_envs("production")
         with (
-            patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj,
+            patch(
+                "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+            ) as mock_proj,
             patch("railguey.lib.doctor._gql", new_callable=AsyncMock) as mock_gql,
         ):
             mock_proj.return_value = proj_return
@@ -302,7 +340,9 @@ class TestDoctor:
             "        env:\n"
             "          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n",
         )
-        with patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj:
+        with patch(
+            "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+        ) as mock_proj:
             mock_proj.return_value = {"error": "skip"}
             result = await doctor(str(workspace_with_token))
         checks = {f["check"]: f for f in result["workspace"]["findings"]}
@@ -310,7 +350,9 @@ class TestDoctor:
         assert "1 branch" in checks["CI/CD workflow"]["message"]
         assert "2 environment" in checks["CI/CD workflow"]["message"]
 
-    @pytest.mark.xfail(reason="Pre-existing: doctor result structure changed to nested workspace/service/project")
+    @pytest.mark.xfail(
+        reason="Pre-existing: doctor result structure changed to nested workspace/service/project"
+    )
     @pytest.mark.asyncio
     async def test_invalid_environment_name_fails(self, workspace_with_token):
         """Workflow references an environment that doesn't exist in Railway."""
@@ -333,7 +375,9 @@ class TestDoctor:
         )
         proj_return, gql_calls = _mock_project_and_envs("production")
         with (
-            patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj,
+            patch(
+                "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+            ) as mock_proj,
             patch("railguey.lib.doctor._gql", new_callable=AsyncMock) as mock_gql,
         ):
             mock_proj.return_value = proj_return
@@ -343,21 +387,37 @@ class TestDoctor:
         assert checks["Environment names"]["status"] == "fail"
         assert "staging" in checks["Environment names"]["message"]
 
-    @pytest.mark.xfail(reason="Pre-existing: doctor result structure changed to nested workspace/service/project")
+    @pytest.mark.xfail(
+        reason="Pre-existing: doctor result structure changed to nested workspace/service/project"
+    )
     @pytest.mark.asyncio
     async def test_linked_repo_warns(self, workspace_with_token):
         write_file(workspace_with_token / ".gitignore", ".env.local\n")
         with (
-            patch("railguey.lib.doctor._resolve_project", new_callable=AsyncMock) as mock_proj,
+            patch(
+                "railguey.lib.doctor._resolve_project", new_callable=AsyncMock
+            ) as mock_proj,
             patch("railguey.lib.doctor._gql", new_callable=AsyncMock) as mock_gql,
         ):
             mock_proj.return_value = {"projectId": "proj-1", "environmentId": "env-1"}
             mock_gql.side_effect = [
-                {"project": {
-                    "environments": {"edges": [{"node": {"id": "env-1", "name": "production"}}]},
-                    "services": {"edges": [{"node": {"id": "svc-1", "name": "web"}}]},
-                }},
-                {"service": {"id": "svc-1", "name": "web", "repoTriggers": [{"repository": "org/repo", "branch": "main"}]}},
+                {
+                    "project": {
+                        "environments": {
+                            "edges": [{"node": {"id": "env-1", "name": "production"}}]
+                        },
+                        "services": {
+                            "edges": [{"node": {"id": "svc-1", "name": "web"}}]
+                        },
+                    }
+                },
+                {
+                    "service": {
+                        "id": "svc-1",
+                        "name": "web",
+                        "repoTriggers": [{"repository": "org/repo", "branch": "main"}],
+                    }
+                },
             ]
             result = await doctor(str(workspace_with_token))
         checks = {f["check"]: f for f in result["workspace"]["findings"]}

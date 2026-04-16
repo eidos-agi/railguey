@@ -31,7 +31,9 @@ def _load_registry() -> dict:
         if path.exists():
             with open(path) as f:
                 return yaml.safe_load(f)
-    return {"error": f"Registry not found. Searched: {[str(p) for p in _REGISTRY_PATHS]}"}
+    return {
+        "error": f"Registry not found. Searched: {[str(p) for p in _REGISTRY_PATHS]}"
+    }
 
 
 def _load_all_registries() -> list[dict]:
@@ -63,6 +65,7 @@ def _expand_home(path: str | None) -> str | None:
 
 # ── Tool 1: registry ───────────────────────────────────────────────
 
+
 async def registry(service: str | None = None) -> dict:
     """Read the service registry. Returns metadata for one or all services.
 
@@ -91,6 +94,7 @@ async def registry(service: str | None = None) -> dict:
 
 # ── Tool 2: preflight ──────────────────────────────────────────────
 
+
 async def preflight(service: str, workspace: str | None = None) -> dict:
     """Pre-push checks for a service. Returns go/no-go with reasons.
 
@@ -108,7 +112,10 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
     svc = _find_service(reg, service)
     if not svc:
         names = [s["name"] for s in reg.get("services", [])]
-        return {"go": False, "reasons": [f"Service '{service}' not in registry. Known: {names}"]}
+        return {
+            "go": False,
+            "reasons": [f"Service '{service}' not in registry. Known: {names}"],
+        }
 
     ws = workspace or _expand_home(svc.get("workspace"))
     checks = []
@@ -118,18 +125,32 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
     deploy_branch = svc.get("deploy", {}).get("branch")
     if deploy_branch and ws:
         import subprocess
+
         try:
             result = subprocess.run(
                 ["git", "branch", "--show-current"],
-                cwd=ws, capture_output=True, text=True, timeout=5,
+                cwd=ws,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             current_branch = result.stdout.strip()
             if current_branch == deploy_branch:
-                checks.append({"check": "branch", "status": "pass",
-                               "detail": f"On {current_branch}"})
+                checks.append(
+                    {
+                        "check": "branch",
+                        "status": "pass",
+                        "detail": f"On {current_branch}",
+                    }
+                )
             else:
-                blocking.append({"check": "branch", "status": "fail",
-                                 "detail": f"On '{current_branch}', registry expects '{deploy_branch}'"})
+                blocking.append(
+                    {
+                        "check": "branch",
+                        "status": "fail",
+                        "detail": f"On '{current_branch}', registry expects '{deploy_branch}'",
+                    }
+                )
         except Exception as e:
             checks.append({"check": "branch", "status": "skip", "detail": str(e)})
 
@@ -137,17 +158,28 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
     defaults = reg.get("defaults", {}).get("preflight", {})
     if defaults.get("require_clean_worktree", True) and ws:
         import subprocess
+
         try:
             result = subprocess.run(
                 ["git", "status", "--porcelain"],
-                cwd=ws, capture_output=True, text=True, timeout=5,
+                cwd=ws,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             dirty_files = [ln for ln in result.stdout.strip().split("\n") if ln.strip()]
             if not dirty_files:
-                checks.append({"check": "worktree", "status": "pass", "detail": "Clean"})
+                checks.append(
+                    {"check": "worktree", "status": "pass", "detail": "Clean"}
+                )
             else:
-                blocking.append({"check": "worktree", "status": "fail",
-                                 "detail": f"{len(dirty_files)} uncommitted files"})
+                blocking.append(
+                    {
+                        "check": "worktree",
+                        "status": "fail",
+                        "detail": f"{len(dirty_files)} uncommitted files",
+                    }
+                )
         except Exception as e:
             checks.append({"check": "worktree", "status": "skip", "detail": str(e)})
 
@@ -167,23 +199,38 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
                       }
                     }
                     """
-                    dep_result = await _gql(token, dep_query, {
-                        "input": {"projectId": project_id, "serviceId": service_id}
-                    })
+                    dep_result = await _gql(
+                        token,
+                        dep_query,
+                        {"input": {"projectId": project_id, "serviceId": service_id}},
+                    )
                     edges = dep_result.get("deployments", {}).get("edges", [])
                     if edges:
                         latest_status = edges[0]["node"].get("status", "")
                         if latest_status in ("BUILDING", "DEPLOYING", "INITIALIZING"):
-                            blocking.append({
-                                "check": "concurrency", "status": "fail",
-                                "detail": f"Deploy already in progress (status: {latest_status})"
-                            })
+                            blocking.append(
+                                {
+                                    "check": "concurrency",
+                                    "status": "fail",
+                                    "detail": f"Deploy already in progress (status: {latest_status})",
+                                }
+                            )
                         else:
-                            checks.append({"check": "concurrency", "status": "pass",
-                                           "detail": f"No active deploy (last: {latest_status})"})
+                            checks.append(
+                                {
+                                    "check": "concurrency",
+                                    "status": "pass",
+                                    "detail": f"No active deploy (last: {latest_status})",
+                                }
+                            )
                 else:
-                    checks.append({"check": "concurrency", "status": "skip",
-                                   "detail": f"Service '{service}' not found in Railway project"})
+                    checks.append(
+                        {
+                            "check": "concurrency",
+                            "status": "skip",
+                            "detail": f"Service '{service}' not found in Railway project",
+                        }
+                    )
         except Exception as e:
             checks.append({"check": "concurrency", "status": "skip", "detail": str(e)})
 
@@ -194,8 +241,13 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
         target_name = dep.get("target")
         target_svc = _find_service(reg, target_name)
         if not target_svc:
-            blocking.append({"check": f"dependency:{target_name}", "status": "fail",
-                             "detail": f"Dependency '{target_name}' not in registry"})
+            blocking.append(
+                {
+                    "check": f"dependency:{target_name}",
+                    "status": "fail",
+                    "detail": f"Dependency '{target_name}' not in registry",
+                }
+            )
             continue
 
         # For migrations: check that all are synced
@@ -203,10 +255,14 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
             target_ws = _expand_home(target_svc.get("workspace"))
             if target_ws:
                 import subprocess
+
                 try:
                     result = subprocess.run(
                         ["npx", "supabase", "migration", "list", "--linked"],
-                        cwd=target_ws, capture_output=True, text=True, timeout=30,
+                        cwd=target_ws,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
                     )
                     # Look for lines where Local has a value but Remote is empty
                     unsynced = []
@@ -216,23 +272,41 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
                         if len(parts) >= 2 and parts[0] and not parts[1]:
                             unsynced.append(parts[0])
                     if unsynced:
-                        blocking.append({
-                            "check": f"dependency:{target_name}", "status": "fail",
-                            "detail": f"Undeployed migrations: {unsynced}"
-                        })
+                        blocking.append(
+                            {
+                                "check": f"dependency:{target_name}",
+                                "status": "fail",
+                                "detail": f"Undeployed migrations: {unsynced}",
+                            }
+                        )
                     else:
-                        checks.append({"check": f"dependency:{target_name}", "status": "pass",
-                                       "detail": "All migrations synced"})
+                        checks.append(
+                            {
+                                "check": f"dependency:{target_name}",
+                                "status": "pass",
+                                "detail": "All migrations synced",
+                            }
+                        )
                 except Exception as e:
-                    checks.append({"check": f"dependency:{target_name}", "status": "skip",
-                                   "detail": str(e)})
+                    checks.append(
+                        {
+                            "check": f"dependency:{target_name}",
+                            "status": "skip",
+                            "detail": str(e),
+                        }
+                    )
 
         # For Railway services: check latest deploy is SUCCESS
         elif target_svc.get("type") == "railway_service":
             target_ws = _expand_home(target_svc.get("workspace"))
             if not target_ws:
-                blocking.append({"check": f"dependency:{target_name}", "status": "fail",
-                                 "detail": f"Required dependency '{target_name}' has no workspace configured"})
+                blocking.append(
+                    {
+                        "check": f"dependency:{target_name}",
+                        "status": "fail",
+                        "detail": f"Required dependency '{target_name}' has no workspace configured",
+                    }
+                )
             else:
                 try:
                     token = _load_token(target_ws)
@@ -248,20 +322,39 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
                               }
                             }
                             """
-                            dep_result = await _gql(token, dep_query, {
-                                "input": {"projectId": project_id, "serviceId": sid}
-                            })
+                            dep_result = await _gql(
+                                token,
+                                dep_query,
+                                {"input": {"projectId": project_id, "serviceId": sid}},
+                            )
                             edges = dep_result.get("deployments", {}).get("edges", [])
                             if edges and edges[0]["node"].get("status") == "SUCCESS":
-                                checks.append({"check": f"dependency:{target_name}", "status": "pass",
-                                               "detail": "Latest deploy SUCCESS"})
+                                checks.append(
+                                    {
+                                        "check": f"dependency:{target_name}",
+                                        "status": "pass",
+                                        "detail": "Latest deploy SUCCESS",
+                                    }
+                                )
                             else:
-                                status = edges[0]["node"].get("status") if edges else "none"
-                                blocking.append({"check": f"dependency:{target_name}", "status": "fail",
-                                                 "detail": f"Latest deploy: {status}"})
+                                status = (
+                                    edges[0]["node"].get("status") if edges else "none"
+                                )
+                                blocking.append(
+                                    {
+                                        "check": f"dependency:{target_name}",
+                                        "status": "fail",
+                                        "detail": f"Latest deploy: {status}",
+                                    }
+                                )
                 except Exception as e:
-                    checks.append({"check": f"dependency:{target_name}", "status": "skip",
-                                   "detail": str(e)})
+                    checks.append(
+                        {
+                            "check": f"dependency:{target_name}",
+                            "status": "skip",
+                            "detail": str(e),
+                        }
+                    )
 
     go = len(blocking) == 0
     return {
@@ -269,13 +362,18 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
         "service": service,
         "passed": checks,
         "blocking": blocking,
-        "summary": "All preflight checks passed" if go else f"{len(blocking)} blocking issue(s)",
+        "summary": "All preflight checks passed"
+        if go
+        else f"{len(blocking)} blocking issue(s)",
     }
 
 
 # ── Tool 3: verify ─────────────────────────────────────────────────
 
-async def verify(service: str, workspace: str | None = None, deployment_id: str | None = None) -> dict:
+
+async def verify(
+    service: str, workspace: str | None = None, deployment_id: str | None = None
+) -> dict:
     """Post-push verification. Polls Railway, checks health, scans logs.
 
     Returns pass/fail with evidence.
@@ -298,17 +396,21 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
     poll_interval = defaults.get("poll_interval_seconds", 10)
     streak_target = svc_verify.get("success_streak", defaults.get("success_streak", 3))
     log_tail = defaults.get("log_tail_lines", 50)
-    fail_patterns = (
-        svc.get("health", {}).get("log_patterns", {}).get("fail_fast", [])
-        + defaults.get("fail_fast_patterns", [])
-    )
+    fail_patterns = svc.get("health", {}).get("log_patterns", {}).get(
+        "fail_fast", []
+    ) + defaults.get("fail_fast_patterns", [])
 
     results = {"service": service, "checks": []}
 
     # Skip Railway polling for non-Railway services
     if svc.get("type") != "railway_service":
-        results["checks"].append({"check": "deploy_poll", "status": "skip",
-                                   "detail": f"Not a Railway service (type: {svc.get('type')})"})
+        results["checks"].append(
+            {
+                "check": "deploy_poll",
+                "status": "skip",
+                "detail": f"Not a Railway service (type: {svc.get('type')})",
+            }
+        )
         results["pass"] = True
         return results
 
@@ -318,15 +420,22 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
         project = await _resolve_project(token)
         if "error" in project:
             results["pass"] = False
-            results["checks"].append({"check": "deploy_poll", "status": "fail", "detail": str(project)})
+            results["checks"].append(
+                {"check": "deploy_poll", "status": "fail", "detail": str(project)}
+            )
             return results
 
         project_id = project.get("projectId", "")
         service_id = await _resolve_service_id(token, project_id, service)
         if not service_id:
             results["pass"] = False
-            results["checks"].append({"check": "deploy_poll", "status": "fail",
-                                       "detail": f"Service '{service}' not found in Railway"})
+            results["checks"].append(
+                {
+                    "check": "deploy_poll",
+                    "status": "fail",
+                    "detail": f"Service '{service}' not found in Railway",
+                }
+            )
             return results
 
         dep_query = """
@@ -342,9 +451,11 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
         final_deployment_id = deployment_id
 
         while time.time() - start_time < timeout:
-            dep_result = await _gql(token, dep_query, {
-                "input": {"projectId": project_id, "serviceId": service_id}
-            })
+            dep_result = await _gql(
+                token,
+                dep_query,
+                {"input": {"projectId": project_id, "serviceId": service_id}},
+            )
             edges = dep_result.get("deployments", {}).get("edges", [])
             if edges:
                 node = edges[0]["node"]
@@ -355,18 +466,33 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
             await asyncio.sleep(poll_interval)
 
         if final_status == "SUCCESS":
-            results["checks"].append({"check": "deploy_poll", "status": "pass",
-                                       "detail": f"Deploy {final_status}",
-                                       "deployment_id": final_deployment_id})
+            results["checks"].append(
+                {
+                    "check": "deploy_poll",
+                    "status": "pass",
+                    "detail": f"Deploy {final_status}",
+                    "deployment_id": final_deployment_id,
+                }
+            )
         elif final_status:
-            results["checks"].append({"check": "deploy_poll", "status": "fail",
-                                       "detail": f"Deploy {final_status}",
-                                       "deployment_id": final_deployment_id})
+            results["checks"].append(
+                {
+                    "check": "deploy_poll",
+                    "status": "fail",
+                    "detail": f"Deploy {final_status}",
+                    "deployment_id": final_deployment_id,
+                }
+            )
             results["pass"] = False
             return results
         else:
-            results["checks"].append({"check": "deploy_poll", "status": "fail",
-                                       "detail": f"Timed out after {timeout}s"})
+            results["checks"].append(
+                {
+                    "check": "deploy_poll",
+                    "status": "fail",
+                    "detail": f"Timed out after {timeout}s",
+                }
+            )
             results["pass"] = False
             return results
 
@@ -379,29 +505,44 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
               }
             }
             """
-            log_result = await _gql(token, log_query, {
-                "deploymentId": final_deployment_id, "limit": log_tail,
-            })
+            log_result = await _gql(
+                token,
+                log_query,
+                {
+                    "deploymentId": final_deployment_id,
+                    "limit": log_tail,
+                },
+            )
             log_entries = log_result.get("deploymentLogs", [])
             found_issues = []
             for entry in log_entries:
                 msg = entry.get("message", "")
                 for pattern in fail_patterns:
                     if pattern.lower() in msg.lower():
-                        found_issues.append({"pattern": pattern, "line": msg.strip()[:200]})
+                        found_issues.append(
+                            {"pattern": pattern, "line": msg.strip()[:200]}
+                        )
                         break
 
             if found_issues:
-                results["checks"].append({
-                    "check": "log_scan", "status": "fail",
-                    "detail": f"Found {len(found_issues)} fail-fast pattern(s)",
-                    "matches": found_issues[:10],
-                })
+                results["checks"].append(
+                    {
+                        "check": "log_scan",
+                        "status": "fail",
+                        "detail": f"Found {len(found_issues)} fail-fast pattern(s)",
+                        "matches": found_issues[:10],
+                    }
+                )
                 results["pass"] = False
                 return results
             else:
-                results["checks"].append({"check": "log_scan", "status": "pass",
-                                           "detail": f"No fail-fast patterns in {len(log_entries)} log lines"})
+                results["checks"].append(
+                    {
+                        "check": "log_scan",
+                        "status": "pass",
+                        "detail": f"No fail-fast patterns in {len(log_entries)} log lines",
+                    }
+                )
 
         # Step 3: HTTP health check
         health_http = svc.get("health", {}).get("http")
@@ -422,10 +563,26 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
             """
             svc_result = await _gql(token, svc_query, {"id": service_id})
             domains = []
-            for edge in svc_result.get("service", {}).get("serviceInstances", {}).get("edges", []):
+            for edge in (
+                svc_result.get("service", {})
+                .get("serviceInstances", {})
+                .get("edges", [])
+            ):
                 dom_data = edge["node"].get("domains", {}) or {}
-                domains.extend([d["domain"] for d in dom_data.get("customDomains", []) if d.get("domain")])
-                domains.extend([d["domain"] for d in dom_data.get("serviceDomains", []) if d.get("domain")])
+                domains.extend(
+                    [
+                        d["domain"]
+                        for d in dom_data.get("customDomains", [])
+                        if d.get("domain")
+                    ]
+                )
+                domains.extend(
+                    [
+                        d["domain"]
+                        for d in dom_data.get("serviceDomains", [])
+                        if d.get("domain")
+                    ]
+                )
 
             if domains:
                 health_path = health_http.get("path", "/health")
@@ -436,7 +593,9 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
                 last_error = None
                 for _ in range(streak_target + 2):
                     try:
-                        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                        async with httpx.AsyncClient(
+                            timeout=10, follow_redirects=True
+                        ) as client:
                             resp = await client.get(url)
                             if resp.status_code == expect_status:
                                 streak += 1
@@ -444,32 +603,47 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
                                     break
                             else:
                                 streak = 0
-                                last_error = f"Got {resp.status_code}, expected {expect_status}"
+                                last_error = (
+                                    f"Got {resp.status_code}, expected {expect_status}"
+                                )
                     except Exception as e:
                         streak = 0
                         last_error = str(e)
                     await asyncio.sleep(3)
 
                 if streak >= streak_target:
-                    results["checks"].append({
-                        "check": "health_http", "status": "pass",
-                        "detail": f"{url} returned {expect_status} x{streak}",
-                    })
+                    results["checks"].append(
+                        {
+                            "check": "health_http",
+                            "status": "pass",
+                            "detail": f"{url} returned {expect_status} x{streak}",
+                        }
+                    )
                 else:
-                    results["checks"].append({
-                        "check": "health_http", "status": "fail",
-                        "detail": f"Health check failed: {last_error}",
-                        "url": url,
-                    })
+                    results["checks"].append(
+                        {
+                            "check": "health_http",
+                            "status": "fail",
+                            "detail": f"Health check failed: {last_error}",
+                            "url": url,
+                        }
+                    )
                     results["pass"] = False
                     return results
             else:
-                results["checks"].append({"check": "health_http", "status": "skip",
-                                           "detail": "No domain found on Railway service"})
+                results["checks"].append(
+                    {
+                        "check": "health_http",
+                        "status": "skip",
+                        "detail": "No domain found on Railway service",
+                    }
+                )
 
     except Exception as e:
         results["pass"] = False
-        results["checks"].append({"check": "verify", "status": "error", "detail": str(e)})
+        results["checks"].append(
+            {"check": "verify", "status": "error", "detail": str(e)}
+        )
         return results
 
     results["pass"] = True
@@ -477,6 +651,7 @@ async def verify(service: str, workspace: str | None = None, deployment_id: str 
 
 
 # ── Tool 4: deploy_plan ────────────────────────────────────────────
+
 
 async def deploy_plan(repos: list[str]) -> dict:
     """Given changed repos, return an ordered deploy plan with stages and gates.
@@ -502,8 +677,10 @@ async def deploy_plan(repos: list[str]) -> dict:
             affected.append(svc)
 
     if not affected:
-        return {"error": f"No services match repos: {repos}",
-                "known_repos": list({s.get("repo") for s in all_services if s.get("repo")})}
+        return {
+            "error": f"No services match repos: {repos}",
+            "known_repos": list({s.get("repo") for s in all_services if s.get("repo")}),
+        }
 
     affected_names = {s["name"] for s in affected}
 
@@ -556,37 +733,58 @@ async def deploy_plan(repos: list[str]) -> dict:
 
     stages = []
     if stage1:
-        stages.append({
-            "stage": 1,
-            "label": "Database migrations",
-            "gate": "blocking — must complete before proceeding",
-            "services": [{"name": s["name"], "type": s["type"],
-                          "deploy": s.get("deploy", {}),
-                          "in_change_set": s.get("repo") in repos}
-                         for s in stage1],
-        })
+        stages.append(
+            {
+                "stage": 1,
+                "label": "Database migrations",
+                "gate": "blocking — must complete before proceeding",
+                "services": [
+                    {
+                        "name": s["name"],
+                        "type": s["type"],
+                        "deploy": s.get("deploy", {}),
+                        "in_change_set": s.get("repo") in repos,
+                    }
+                    for s in stage1
+                ],
+            }
+        )
     if stage2:
-        stages.append({
-            "stage": 2,
-            "label": "API and config services",
-            "gate": "verify health before proceeding to stage 3",
-            "services": [{"name": s["name"], "type": s["type"],
-                          "deploy": s.get("deploy", {}),
-                          "in_change_set": s.get("repo") in repos}
-                         for s in stage2],
-            "parallel": len(stage2) > 1,
-        })
+        stages.append(
+            {
+                "stage": 2,
+                "label": "API and config services",
+                "gate": "verify health before proceeding to stage 3",
+                "services": [
+                    {
+                        "name": s["name"],
+                        "type": s["type"],
+                        "deploy": s.get("deploy", {}),
+                        "in_change_set": s.get("repo") in repos,
+                    }
+                    for s in stage2
+                ],
+                "parallel": len(stage2) > 1,
+            }
+        )
     if stage3:
-        stages.append({
-            "stage": len(stages) + 1,
-            "label": "Frontends and workers",
-            "gate": "final verification",
-            "services": [{"name": s["name"], "type": s["type"],
-                          "deploy": s.get("deploy", {}),
-                          "in_change_set": s.get("repo") in repos}
-                         for s in stage3],
-            "parallel": len(stage3) > 1,
-        })
+        stages.append(
+            {
+                "stage": len(stages) + 1,
+                "label": "Frontends and workers",
+                "gate": "final verification",
+                "services": [
+                    {
+                        "name": s["name"],
+                        "type": s["type"],
+                        "deploy": s.get("deploy", {}),
+                        "in_change_set": s.get("repo") in repos,
+                    }
+                    for s in stage3
+                ],
+                "parallel": len(stage3) > 1,
+            }
+        )
 
     # Identify services added by dependency expansion (not in original change set)
     auto_included = expanded - affected_names
@@ -600,5 +798,7 @@ async def deploy_plan(repos: list[str]) -> dict:
         "warnings": [
             f"'{name}' auto-included as required dependency (not in your change set)"
             for name in sorted(auto_included)
-        ] if auto_included else [],
+        ]
+        if auto_included
+        else [],
     }
