@@ -11,6 +11,7 @@ from railguey.lib import tools
 from railguey.lib import accounts
 from railguey.lib import totp
 from railguey.lib import orchestrate
+from railguey.lib.token_test import token_test as _token_test
 
 mcp = FastMCP("railguey")
 
@@ -519,6 +520,25 @@ async def railguey_totp_verify(code: str) -> dict:
 
 
 @mcp.tool()
+async def railguey_token_test() -> dict:
+    """Test all registered account tokens against multiple permission types.
+
+    Diagnostic tool — run when a deploy fails or a token seems wrong.
+    For each registered account, tests:
+      1. Bearer introspection (account-level me query)
+      2. Project-Access-Token introspection (projectToken query)
+      3. List services in the project
+      4. Read variables for a service
+      5. Deploy permission (attempts deploymentRedeploy with fake ID —
+         "not found" = has permission, "not authorized" = doesn't)
+
+    Returns a structured report: account name, token prefix, environment ID,
+    and pass/fail for each capability.
+    """
+    return await _token_test()
+
+
+@mcp.tool()
 async def railguey_service_update(
     workspace: str,
     service: str,
@@ -731,6 +751,31 @@ async def railguey_volume_resize(
         size_mb: New size in megabytes. Must be larger than current size.
     """
     return await tools.volume_resize(workspace, volume_instance_id, size_mb)
+
+
+@mcp.tool()
+async def railguey_sync_github_secrets(dry_run: bool = False) -> dict:
+    """Push railguey-managed project tokens to GitHub Actions secrets.
+
+    Reads the github_secrets mapping from ~/.railguey/accounts.json and
+    pushes each account's token to the configured GitHub repo secrets
+    via `gh secret set`.
+
+    Project access tokens don't expire, so this eliminates deploy
+    workflow failures caused by expired user tokens.
+
+    Run with dry_run=True first to see what would be synced.
+
+    Config example in ~/.railguey/accounts.json:
+      "github_secrets": {
+        "develop": [{"repo": "org/repo", "secret_name": "RAILWAY_TOKEN_DEVELOP"}],
+        "production": [{"repo": "org/repo", "secret_name": "RAILWAY_TOKEN"}]
+      }
+
+    Args:
+        dry_run: If True, report what would be synced without writing.
+    """
+    return await tools.sync_github_secrets(dry_run)
 
 
 if __name__ == "__main__":

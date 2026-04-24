@@ -19,7 +19,41 @@ from railguey.lib.graphql import (
     _resolve_service_id,
     _load_user_token,
 )
+from railguey.lib.accounts import _load_config as _load_accounts_config
 from railguey.lib.doctor import doctor  # re-export
+from railguey.lib.topology import update_topology
+
+
+def _active_account_name() -> str:
+    """Return the name of the active railguey account, or '(workspace .env)' if none."""
+    try:
+        config = _load_accounts_config()
+        default = config.get("default_account")
+        if default and default in config.get("accounts", {}):
+            return default
+    except Exception:
+        pass
+    return "(workspace .env)"
+
+
+async def _resolve_environment_name(token: str, project_id: str, environment_id: str) -> str:
+    """Look up the human-readable environment name for an environmentId."""
+    query = """
+    query project($id: String!) {
+      project(id: $id) {
+        environments { edges { node { id name } } }
+      }
+    }
+    """
+    result = await _gql(token, query, {"id": project_id})
+    if "error" in result:
+        return environment_id  # fallback to raw ID
+    edges = result.get("project", {}).get("environments", {}).get("edges", [])
+    for edge in edges:
+        node = edge.get("node", {})
+        if node.get("id") == environment_id:
+            return node.get("name", environment_id)
+    return environment_id
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +329,10 @@ async def deploy(workspace: str, service: str) -> dict:
       serviceInstanceRedeploy(environmentId: $environmentId, serviceId: $serviceId)
     }
     """
+    # Resolve environment name and account before deploying
+    env_name = await _resolve_environment_name(token, project_id, environment_id)
+    account_name = _active_account_name()
+
     result = await _gql(
         token,
         query,
@@ -305,7 +343,15 @@ async def deploy(workspace: str, service: str) -> dict:
     )
     if "error" in result:
         return result
-    return {"deployed": True, "service": service}
+    update_topology(
+        workspace, service, deploy_status="BUILDING", operation="deploy"
+    )
+    return {
+        "deployed": True,
+        "service": service,
+        "environment": env_name,
+        "account": account_name,
+    }
 
 
 async def variables(workspace: str, service: str) -> dict:
@@ -383,6 +429,9 @@ async def variable_set(workspace: str, service: str, key: str, value: str) -> di
     )
     if "error" in result:
         return result
+    update_topology(
+        workspace, service, operation="variable_set", extra={"last_var_set": key}
+    )
     return {"set": True, "key": key, "service": service}
 
 
@@ -425,12 +474,17 @@ async def redeploy(workspace: str, service: str) -> dict:
     if "error" in project:
         return project
     project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
     if not project_id:
         return {"error": "Could not resolve projectId from token"}
 
     service_id = await _resolve_service_id(token, project_id, service)
     if not service_id:
         return {"error": f"Service '{service}' not found in project"}
+
+    # Resolve environment name and account before deploying
+    env_name = await _resolve_environment_name(token, project_id, environment_id or "") if environment_id else "unknown"
+    account_name = _active_account_name()
 
     # Find latest deployment
     dep_query = """
@@ -459,11 +513,20 @@ async def redeploy(workspace: str, service: str) -> dict:
     if "error" in result:
         return result
     redeployed = result.get("deploymentRedeploy", {})
+    update_topology(
+        workspace,
+        service,
+        deploy_status=redeployed.get("status", "BUILDING"),
+        deploy_id=redeployed.get("id", ""),
+        operation="redeploy",
+    )
     return {
         "redeployed": True,
         "service": service,
         "deploymentId": redeployed.get("id", ""),
         "status": redeployed.get("status", ""),
+        "environment": env_name,
+        "account": account_name,
     }
 
 
@@ -478,12 +541,17 @@ async def restart(workspace: str, service: str) -> dict:
     if "error" in project:
         return project
     project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
     if not project_id:
         return {"error": "Could not resolve projectId from token"}
 
     service_id = await _resolve_service_id(token, project_id, service)
     if not service_id:
         return {"error": f"Service '{service}' not found in project"}
+
+    # Resolve environment name and account before restarting
+    env_name = await _resolve_environment_name(token, project_id, environment_id or "") if environment_id else "unknown"
+    account_name = _active_account_name()
 
     # Find latest deployment
     dep_query = """
@@ -511,10 +579,13 @@ async def restart(workspace: str, service: str) -> dict:
     result = await _gql(token, query, {"id": deployment_id})
     if "error" in result:
         return result
+    update_topology(workspace, service, operation="restart")
     return {
         "restarted": True,
         "service": service,
         "deploymentId": deployment_id,
+        "environment": env_name,
+        "account": account_name,
     }
 
 
@@ -604,8 +675,15 @@ async def domain(
             return result
         created = result.get("serviceDomainCreate", {})
 
+    created_domain = created.get("domain", "")
+    update_topology(
+        workspace,
+        service,
+        domains=[created_domain] if created_domain else None,
+        operation="domain",
+    )
     return {
-        "domain": created.get("domain", ""),
+        "domain": created_domain,
         "id": created.get("id", ""),
         "service": service,
         "custom": domain is not None,
@@ -1186,6 +1264,7 @@ async def service_create(
         return result
 
     svc = result.get("serviceCreate", {})
+    update_topology(workspace, name, operation="service_create")
     return {
         "created": True,
         "serviceId": svc.get("id", ""),
@@ -1445,6 +1524,12 @@ async def volume_create(
         return result
 
     vol = result.get("volumeCreate", {})
+    update_topology(
+        workspace,
+        service,
+        operation="volume_create",
+        extra={"volume_mount": mount_path},
+    )
     return {
         "created": True,
         "volumeId": vol.get("id", ""),
@@ -1603,4 +1688,98 @@ __all__ = [
     "volumes",
     "volume_delete",
     "volume_resize",
+    "update_topology",
+    "sync_github_secrets",
 ]
+
+
+async def sync_github_secrets(dry_run: bool = False) -> dict:
+    """Push railguey-managed project tokens to GitHub Actions secrets.
+
+    Reads the github_secrets mapping from ~/.railguey/accounts.json.
+    For each mapping, pushes the account's token to the specified
+    GitHub repo secret via `gh secret set`.
+
+    Project access tokens don't expire (unlike user tokens), so this
+    eliminates the class of failure where deploy workflows break
+    because a token expired.
+
+    Args:
+        dry_run: If True, report what would be synced without writing.
+    """
+    import asyncio
+
+    config = _load_accounts_config()
+    mappings = config.get("github_secrets", {})
+
+    if not mappings:
+        return {
+            "error": "No github_secrets mappings in ~/.railguey/accounts.json",
+            "hint": "Add a github_secrets key mapping account names to [{repo, secret_name}]",
+        }
+
+    results = []
+    for account_name, targets in mappings.items():
+        acct = config.get("accounts", {}).get(account_name)
+        if not acct:
+            results.append({
+                "account": account_name,
+                "status": "error",
+                "detail": f"Account '{account_name}' not found in accounts.json",
+            })
+            continue
+
+        token = acct["token"]
+        token_prefix = token[:8]
+
+        for target in targets:
+            repo = target["repo"]
+            secret_name = target["secret_name"]
+
+            if dry_run:
+                results.append({
+                    "account": account_name,
+                    "repo": repo,
+                    "secret_name": secret_name,
+                    "token_prefix": f"{token_prefix}...",
+                    "status": "would_sync",
+                })
+                continue
+
+            # Push via gh CLI
+            proc = await asyncio.create_subprocess_exec(
+                "gh", "secret", "set", secret_name,
+                "--repo", repo,
+                "--body", token,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode == 0:
+                results.append({
+                    "account": account_name,
+                    "repo": repo,
+                    "secret_name": secret_name,
+                    "token_prefix": f"{token_prefix}...",
+                    "status": "synced",
+                })
+            else:
+                results.append({
+                    "account": account_name,
+                    "repo": repo,
+                    "secret_name": secret_name,
+                    "status": "error",
+                    "detail": stderr.decode().strip(),
+                })
+
+    synced = sum(1 for r in results if r["status"] == "synced")
+    errors = sum(1 for r in results if r["status"] == "error")
+
+    return {
+        "total": len(results),
+        "synced": synced,
+        "errors": errors,
+        "dry_run": dry_run,
+        "results": results,
+    }
