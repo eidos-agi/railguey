@@ -315,6 +315,10 @@ async def railguey_doctor_service_level(
       3. Deploy drift (local code vs this service's deploy time)
       4. Token scope vs workflow environment targets
       5. Workflow environment names match Railway environments
+      6. CI/CD environment alignment — does the GitHub Actions
+         RAILWAY_ENVIRONMENT variable match the environment being
+         audited? Catches the case where CI deploys to develop
+         but you're auditing production (service never gets deploys).
 
     Auto-detects service name from workflow, .env.local, or directory name.
 

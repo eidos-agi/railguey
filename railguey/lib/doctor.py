@@ -2,8 +2,18 @@
 
 Three-layer architecture:
   - doctor():                   workspace fundamentals + calls both sub-doctors
-  - doctor_service_level():     this service only (deploy health, domain, drift)
+  - doctor_service_level():     this service only (deploy health, domain, drift, CI/CD alignment)
   - doctor_project_level():     whole project (all services, cross-service issues)
+
+Key checks that catch real deployment failures:
+  - CI/CD-to-environment alignment: Does the GitHub Actions workflow actually
+    deploy to the Railway environment being audited? A workflow that targets
+    $RAILWAY_ENVIRONMENT=develop while you audit the production environment
+    means production will NEVER receive deploys from CI. Doctor now checks the
+    actual GitHub Actions variable value, not just the variable's existence.
+  - Never-deployed services: serviceInstanceRedeploy (railguey_deploy) requires
+    a prior deployment to exist. For never-deployed services, doctor now
+    recommends CI/CD trigger or workflow_dispatch instead.
 """
 
 from pathlib import Path
@@ -813,8 +823,13 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
             {
                 "check": "Deployment health",
                 "status": "warn",
-                "message": f"{svc_name}: no deployments found",
-                "fix": "Deploy with railguey_deploy or push to trigger CI/CD",
+                "message": f"{svc_name}: no deployments found (service exists but never deployed)",
+                "fix": (
+                    "First deploy must come from CI/CD (push to trigger branch) or "
+                    "workflow_dispatch. railguey_deploy (redeploy) requires a prior "
+                    "deployment to exist. Check that RAILWAY_ENVIRONMENT GitHub Actions "
+                    "variable matches this environment."
+                ),
             }
         )
 
@@ -1021,6 +1036,82 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
     else:
         findings.append(
             {"check": "Environment names", "status": "skip", "message": "Cannot verify"}
+        )
+
+    # 6. CI/CD-to-environment alignment (the "1 of 16" check)
+    # If the workflow uses a runtime variable ($RAILWAY_ENVIRONMENT),
+    # check the actual GitHub Actions variable value against the
+    # Railway environment being audited.
+    max_score += 1
+    token_env_name_6 = railway_envs.get(token_env_id, "") if token_env_id else ""
+    if wf["found"] and wf.get("runtime_environments") and token_env_name_6:
+        import subprocess
+
+        # Try to read the actual GitHub Actions variable
+        gh_env_value = None
+        try:
+            result = subprocess.run(
+                ["gh", "variable", "list", "--json", "name,value"],
+                cwd=str(ws),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                import json
+
+                vars_list = json.loads(result.stdout)
+                for v in vars_list:
+                    if v["name"] == "RAILWAY_ENVIRONMENT":
+                        gh_env_value = v["value"]
+                        break
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+
+        if gh_env_value is None:
+            findings.append(
+                {
+                    "check": "CI/CD environment alignment",
+                    "status": "skip",
+                    "message": "Could not read RAILWAY_ENVIRONMENT from GitHub Actions variables (need gh CLI)",
+                }
+            )
+        elif gh_env_value == token_env_name_6:
+            score += 1
+            findings.append(
+                {
+                    "check": "CI/CD environment alignment",
+                    "status": "pass",
+                    "message": (
+                        f"GitHub Actions RAILWAY_ENVIRONMENT={gh_env_value} "
+                        f"matches audited environment '{token_env_name_6}'"
+                    ),
+                }
+            )
+        else:
+            findings.append(
+                {
+                    "check": "CI/CD environment alignment",
+                    "status": "fail",
+                    "message": (
+                        f"MISMATCH: GitHub Actions RAILWAY_ENVIRONMENT={gh_env_value} "
+                        f"but auditing Railway environment '{token_env_name_6}'. "
+                        f"CI/CD will never deploy to {token_env_name_6}."
+                    ),
+                    "fix": (
+                        f"Either add a separate workflow/job for {token_env_name_6}, "
+                        f"or use workflow_dispatch with an environment input, "
+                        f"or add a GitHub Actions environment with RAILWAY_ENVIRONMENT={token_env_name_6}"
+                    ),
+                }
+            )
+    else:
+        findings.append(
+            {
+                "check": "CI/CD environment alignment",
+                "status": "skip",
+                "message": "Cannot verify — need runtime env variable and token scope",
+            }
         )
 
     skipped = sum(1 for f in findings if f["status"] == "skip")
