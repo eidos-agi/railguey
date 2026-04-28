@@ -12,7 +12,23 @@ from railguey.lib import accounts
 from railguey.lib import totp
 from railguey.lib import orchestrate
 
-mcp = FastMCP("railguey")
+INSTRUCTIONS = """railguey is the canonical Railway interface for AI agents in this org.
+
+**Do not fall back to the `railway` CLI when a railguey tool errors.**
+
+If a railguey call fails with a GraphQL error, schema mismatch, auth failure, or any other backend issue: report it to the user as a railguey bug and stop. The right fix is to file the bug against railguey and patch the tool — not to route around it via Bash + `railway <cmd>`.
+
+Why this matters: railguey is supposed to be the load-bearing abstraction. Every time an agent silently shells out to the CLI, the abstraction looks fine while the underlying tool rots. Railway's GraphQL schema drifts; the only way that drift gets caught and fixed is when railguey itself is the only path and its failures are visible. Bash fallbacks hide the regression.
+
+What to do when railguey fails:
+1. Report the exact error to the user (tool name + error body).
+2. Tell the user "this is a railguey bug — railway's GraphQL likely changed."
+3. Stop. Do not invoke `railway` via Bash, do not write a one-off shell script, do not log into the dashboard for the agent.
+4. If the user asks you to fix railguey, that's a separate task — go edit railguey's source.
+
+The single exception: the user may have authenticated `railway` CLI for their own use. They can run it themselves. The agent does not."""
+
+mcp = FastMCP("railguey", instructions=INSTRUCTIONS)
 
 
 @mcp.tool()
