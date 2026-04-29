@@ -1,12 +1,11 @@
-"""railguey.lib — shared core with no framework dependencies."""
+"""railguey.lib — shared core with no framework dependencies.
+
+railguey never invokes the `railway` CLI. Not internally, not as a fallback,
+not from any code path. All Railway operations go through the Backboard
+GraphQL API. See `mcp.py` INSTRUCTIONS for the rule and rationale.
+"""
 
 from railguey.lib.token import _load_token
-from railguey.lib.cli_backend import (
-    _run_railway,
-    _DEFAULT_TIMEOUT,
-    _LOGS_TIMEOUT,
-    _DEPLOY_TIMEOUT,
-)
 from railguey.lib.graphql import (
     _gql,
     _resolve_project,
@@ -17,10 +16,6 @@ from railguey.lib import tools
 
 __all__ = [
     "_load_token",
-    "_run_railway",
-    "_DEFAULT_TIMEOUT",
-    "_LOGS_TIMEOUT",
-    "_DEPLOY_TIMEOUT",
     "_gql",
     "_resolve_project",
     "_resolve_service_id",

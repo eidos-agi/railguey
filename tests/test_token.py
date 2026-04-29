@@ -54,17 +54,17 @@ class TestLoadToken:
         assert _load_token(str(workspace)) == "spaced"
 
     def test_raises_when_no_files(self, workspace):
-        with pytest.raises(ValueError, match="No Railway token found"):
+        with pytest.raises(ValueError, match="No project-scoped Railway token found"):
             _load_token(str(workspace))
 
     def test_raises_when_token_missing_from_file(self, workspace):
         write_file(workspace / ".env.local", "OTHER_VAR=hello\n")
-        with pytest.raises(ValueError, match="No Railway token found"):
+        with pytest.raises(ValueError, match="No project-scoped Railway token found"):
             _load_token(str(workspace))
 
     def test_raises_when_token_empty(self, workspace):
         write_file(workspace / ".env.local", "RAILWAY_TOKEN=\n")
-        with pytest.raises(ValueError, match="No Railway token found"):
+        with pytest.raises(ValueError, match="No project-scoped Railway token found"):
             _load_token(str(workspace))
 
     def test_uuid_style_token(self, workspace):

@@ -12,7 +12,26 @@ from railguey.lib import accounts
 from railguey.lib import totp
 from railguey.lib import orchestrate
 
-mcp = FastMCP("railguey")
+INSTRUCTIONS = """railguey is the canonical Railway interface for AI agents in this org.
+
+**Never use the `railway` CLI. Ever. No exceptions.**
+
+Not as a fallback when a railguey tool errors. Not "just to check something." Not "just this once." Not in a one-off Bash command. Not in a shell script. Not via `subprocess`, `os.system`, or any other route. If you find yourself typing `railway` followed by a space, stop.
+
+When a railguey tool fails:
+1. Report the exact error to the user — tool name and error body, verbatim.
+2. Tell the user this is a railguey bug. Railway's GraphQL schema drifts; railguey's queries need updating.
+3. Stop. Wait for the user. Do not route around the failure.
+4. If the user asks you to fix railguey, edit railguey's source — that's a separate task and a welcome one.
+
+Why this is absolute:
+- railguey is the load-bearing abstraction. Silent CLI fallbacks hide schema drift and let the wrapper rot.
+- The CLI isn't a different transport — it's another GraphQL client against the same Backboard API. Falling back doesn't add reliability; it just changes who maintains the queries (and silences the bug report that would have driven railguey's fix).
+- This rule exists because an agent already tried "just shell out once to keep moving." That's the failure mode. The rule is the patch.
+
+The CLI is the user's tool, not the agent's. If something needs the CLI, the user runs it. Period."""
+
+mcp = FastMCP("railguey", instructions=INSTRUCTIONS)
 
 
 @mcp.tool()

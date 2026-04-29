@@ -11,7 +11,7 @@ from typing import Optional
 
 from pathlib import Path
 
-from railguey.lib.token import _load_token
+from railguey.lib.token import _load_project_token, _load_token
 from railguey.lib.graphql import (
     _gql,
     _gql_bearer,
@@ -1206,18 +1206,18 @@ async def list_projects(
     """
     user_token = _load_user_token(account)
     query = """
-    query workspace($id: String!) {
-      workspace(id: $id) {
+    query workspace($workspaceId: String!) {
+      workspace(workspaceId: $workspaceId) {
         name
         projects { edges { node { id name updatedAt } } }
       }
     }
     """
-    result = await _gql_bearer(user_token, query, {"id": team_id})
+    result = await _gql_bearer(user_token, query, {"workspaceId": team_id})
     if "error" in result:
         return result
 
-    ws = result.get("workspace", {})
+    ws = result.get("workspace") or {}
     edges = ws.get("projects", {}).get("edges", [])
     projects = [
         {
@@ -1411,7 +1411,7 @@ async def volume_create(
     After creation the service redeploys automatically with the volume
     mounted at `mount_path`.
     """
-    token = _load_token(workspace)
+    token = _load_project_token(workspace)
     project = await _resolve_project(token)
     if "error" in project:
         return project
@@ -1461,7 +1461,7 @@ async def volumes(workspace: str) -> dict:
 
     Returns each volume with its volume instances (one per environment).
     """
-    token = _load_token(workspace)
+    token = _load_project_token(workspace)
     project = await _resolve_project(token)
     if "error" in project:
         return project
@@ -1529,7 +1529,7 @@ async def volume_delete(
     Matches the existing project_delete pattern (no TOTP gate at the library
     layer; the destructive nature is documented in the tool docstring).
     """
-    token = _load_token(workspace)
+    token = _load_project_token(workspace)
     query = """
     mutation volumeDelete($volumeId: String!) {
       volumeDelete(volumeId: $volumeId)
@@ -1548,7 +1548,7 @@ async def volume_resize(
 ) -> dict:
     """Resize a volume instance to a new size (MB). Railway requires
     grow-only — you can increase but not shrink."""
-    token = _load_token(workspace)
+    token = _load_project_token(workspace)
     project = await _resolve_project(token)
     if "error" in project:
         return project
