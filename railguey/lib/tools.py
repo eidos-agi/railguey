@@ -1206,18 +1206,18 @@ async def list_projects(
     """
     user_token = _load_user_token(account)
     query = """
-    query workspace($id: String!) {
-      workspace(id: $id) {
+    query workspace($workspaceId: String!) {
+      workspace(workspaceId: $workspaceId) {
         name
         projects { edges { node { id name updatedAt } } }
       }
     }
     """
-    result = await _gql_bearer(user_token, query, {"id": team_id})
+    result = await _gql_bearer(user_token, query, {"workspaceId": team_id})
     if "error" in result:
         return result
 
-    ws = result.get("workspace", {})
+    ws = result.get("workspace") or {}
     edges = ws.get("projects", {}).get("edges", [])
     projects = [
         {

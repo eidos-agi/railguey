@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.8 — GraphQL drift fix + structural CLI removal
+
+- **Fixed**: `Query.workspace` argument renamed by Railway from `id` to `workspaceId`. `railguey_projects` was returning `Unknown argument "id" on field "Query.workspace"`. Updated the `list_projects` query to use `workspaceId: String!`. Live-verified end-to-end against the Eidos workspace (11 projects returned).
+- **Fixed**: Defensive `or {}` when Railway returns `workspace: null` (introspection-edge case).
+- **Fixed**: `test_token` regexes updated to match the current `_load_token` error wording (`"No project-scoped Railway token found"`). The error message itself was not changed — it's the more helpful one.
+- **Structural**: `railguey/lib/cli_backend.py` deleted (was already unused). The "never use the railway CLI" rule is now enforced by absence: there is no CLI backend module to fall back to. The MCP server prelude block in `railguey/mcp.py` reinforces the rule for callers.
+- **Tests**: 209 passed, 14 xfailed (xfail covers pre-existing `TestDoctorReal` shape drift — `doctor()` now returns nested `workspace/service/project` layers but the tests assert top-level `findings`/`score`; CI excludes `test_integration.py` so they are local-only and not blocking).
+
 ## v0.2.7 — CI green: test fixes, lint clean, account isolation
 
 - **Fixed**: All tests pass (186 passed, 6 xfailed for pre-existing structural issues)
