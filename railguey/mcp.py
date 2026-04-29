@@ -14,19 +14,22 @@ from railguey.lib import orchestrate
 
 INSTRUCTIONS = """railguey is the canonical Railway interface for AI agents in this org.
 
-**Do not fall back to the `railway` CLI when a railguey tool errors.**
+**Never use the `railway` CLI. Ever. No exceptions.**
 
-If a railguey call fails with a GraphQL error, schema mismatch, auth failure, or any other backend issue: report it to the user as a railguey bug and stop. The right fix is to file the bug against railguey and patch the tool — not to route around it via Bash + `railway <cmd>`.
+Not as a fallback when a railguey tool errors. Not "just to check something." Not "just this once." Not in a one-off Bash command. Not in a shell script. Not via `subprocess`, `os.system`, or any other route. If you find yourself typing `railway` followed by a space, stop.
 
-Why this matters: railguey is supposed to be the load-bearing abstraction. Every time an agent silently shells out to the CLI, the abstraction looks fine while the underlying tool rots. Railway's GraphQL schema drifts; the only way that drift gets caught and fixed is when railguey itself is the only path and its failures are visible. Bash fallbacks hide the regression.
+When a railguey tool fails:
+1. Report the exact error to the user — tool name and error body, verbatim.
+2. Tell the user this is a railguey bug. Railway's GraphQL schema drifts; railguey's queries need updating.
+3. Stop. Wait for the user. Do not route around the failure.
+4. If the user asks you to fix railguey, edit railguey's source — that's a separate task and a welcome one.
 
-What to do when railguey fails:
-1. Report the exact error to the user (tool name + error body).
-2. Tell the user "this is a railguey bug — railway's GraphQL likely changed."
-3. Stop. Do not invoke `railway` via Bash, do not write a one-off shell script, do not log into the dashboard for the agent.
-4. If the user asks you to fix railguey, that's a separate task — go edit railguey's source.
+Why this is absolute:
+- railguey is the load-bearing abstraction. Silent CLI fallbacks hide schema drift and let the wrapper rot.
+- The CLI isn't a different transport — it's another GraphQL client against the same Backboard API. Falling back doesn't add reliability; it just changes who maintains the queries (and silences the bug report that would have driven railguey's fix).
+- This rule exists because an agent already tried "just shell out once to keep moving." That's the failure mode. The rule is the patch.
 
-The single exception: the user may have authenticated `railway` CLI for their own use. They can run it themselves. The agent does not."""
+The CLI is the user's tool, not the agent's. If something needs the CLI, the user runs it. Period."""
 
 mcp = FastMCP("railguey", instructions=INSTRUCTIONS)
 
