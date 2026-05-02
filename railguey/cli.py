@@ -8,6 +8,7 @@ Usage:
 
 import asyncio
 import json
+import sys
 
 import click
 
@@ -21,8 +22,17 @@ def _run(coro):
 
 
 def _output(result: dict):
-    """Pretty-print a tool result as JSON."""
+    """Pretty-print a tool result as JSON, exit non-zero if it carries an error.
+
+    The "error" key is railguey's convention for tool-call failure (HTTP non-2xx,
+    GraphQL errors, missing credentials, etc.). Without this exit-non-zero
+    behavior, CI workflows that pipe `railguey <verb>` to a step succeed even
+    when Railway returned a 404 — silently masking failed deploys.
+    Caught 2026-05-02 when GHA showed green for an `upload-source` that 404'd.
+    """
     click.echo(json.dumps(result, indent=2))
+    if isinstance(result, dict) and "error" in result:
+        sys.exit(1)
 
 
 @click.group()
