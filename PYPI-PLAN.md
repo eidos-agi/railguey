@@ -2,11 +2,10 @@
 
 ## Prerequisites
 
-### 1. PyPI account
-- Register at https://pypi.org/account/register/ (use `daniel@eidosagi.com`)
-- Enable 2FA (required for new projects since 2024)
-- Create an API token: Account Settings → API tokens → "Add API token"
-  - Scope: "Entire account" for first publish, then lock to project after
+### 1. PyPI trusted publisher
+- PyPI project: https://pypi.org/project/railguey/
+- Publisher: GitHub Actions, `eidos-agi/railguey`, workflow `publish.yml`, environment `pypi`
+- No PyPI API token is required for normal releases.
 
 ### 2. TestPyPI account (optional but recommended)
 - Register at https://test.pypi.org/account/register/
@@ -19,7 +18,7 @@
 ```bash
 pip install check-wheel-contents twine
 python -m build
-check-wheel-contents dist/railguey-0.2.0-py3-none-any.whl
+check-wheel-contents dist/railguey-*.whl
 twine check dist/*
 ```
 
@@ -28,7 +27,7 @@ Confirm:
 - README.md renders correctly (twine check validates this)
 - No test files or secrets in the wheel
 
-### Step 2: Claim the name on TestPyPI
+### Step 2: Optional TestPyPI dry run
 ```bash
 twine upload --repository testpypi dist/*
 ```
@@ -41,73 +40,35 @@ railguey --help
 ```
 
 ### Step 3: Publish to PyPI
-```bash
-twine upload dist/*
-```
+Publish by pushing a matching version tag. The `publish.yml` workflow validates that the tag and `pyproject.toml` version match, builds the package, and publishes via PyPI Trusted Publishing.
 
 Verify:
 ```bash
-pip install railguey
+pip install railguey==<version>
 railguey --version
 uvx railguey --help
 ```
 
-### Step 4: Lock API token to project
-- Go to PyPI → Account Settings → API tokens
-- Delete the "Entire account" token
-- Create a new token scoped to the `railguey` project only
-- Store in GitHub repo secret as `PYPI_API_TOKEN`
-
-### Step 5: Automate future releases (GitHub Actions)
-Create `.github/workflows/publish.yml`:
-```yaml
-name: Publish to PyPI
-
-on:
-  release:
-    types: [published]
-
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write  # trusted publishing
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install build
-      - run: python -m build
-      - uses: pypa/gh-action-pypi-publish@release/v1
-```
-
-Even better: use PyPI's [Trusted Publishers](https://docs.pypi.org/trusted-publishers/) instead of API tokens. Link the GitHub repo to the PyPI project — no secrets to manage.
-
-### Step 6: GitHub release workflow
+### Step 4: GitHub release workflow
 1. Bump version in `pyproject.toml` and `railguey/__init__.py`
 2. Update `CHANGELOG.md`
-3. Commit: `git commit -m "release: v0.2.0"`
-4. Tag: `git tag v0.2.0`
-5. Push: `git push origin main --tags`
-6. Create GitHub release from the tag → triggers publish workflow
+3. Commit: `git commit -m "release: v<VERSION>"`
+4. Tag: `git tag v<VERSION>`
+5. Push: `git push origin main && git push origin v<VERSION>`
+6. Confirm the Publish to PyPI workflow succeeds
 
 ## Checklist
 
-- [ ] PyPI account created with 2FA
+- [x] PyPI trusted publisher configured
 - [ ] `twine check` passes
-- [ ] TestPyPI upload works
-- [ ] `pip install railguey` from TestPyPI works
+- [ ] TestPyPI upload works, if using the optional dry run
 - [ ] PyPI upload works
 - [ ] `uvx railguey --help` works (proves it's installable without pre-install)
 - [ ] `uvx railguey --help` shows the CLI command list
-- [ ] API token scoped to project only
-- [ ] GitHub Actions publish workflow added
-- [ ] Trusted Publishers configured (replaces API token)
+- [x] GitHub Actions publish workflow added
 
 ## Version strategy
 
-- `0.2.0` — current (lib extraction + CLI)
-- `0.2.x` — patch releases (bug fixes)
-- `0.3.0` — next feature release
+- `0.3.x` — current CLI-only line
+- `0.4.0` — next feature release
 - `1.0.0` — when API is stable and battle-tested across multiple teams

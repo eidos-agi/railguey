@@ -26,10 +26,10 @@ railguey is a Python CLI package published to PyPI. There's no running service t
 All must pass before committing.
 
 ### Steps
-1. **Unit tests**: `pytest tests/ --ignore=tests/test_integration.py -v` — all 39 must pass
+1. **Unit tests**: `pytest tests/ --ignore=tests/test_integration.py -v` — all non-xfailed tests must pass
 2. **Wheel build**: `python -m build` then inspect contents:
    - `python -c "import zipfile; z=zipfile.ZipFile('dist/railguey-*.whl'); [print(f) for f in sorted(z.namelist())]"`
-   - HARD FAIL if `tests/`, `WHY-RAILGUEY.md`, `logo.png`, or any non-package file appears in the wheel
+   - HARD FAIL if `tests/`, docs, images, or any non-package file appears in the wheel
 3. **Version check**: Verify `railguey/__init__.py` `__version__` matches `pyproject.toml` `version`
    - `python -c "from railguey import __version__; print(__version__)"` vs `grep '^version' pyproject.toml`
    - HARD FAIL if they differ
@@ -54,8 +54,7 @@ All must pass before committing.
 4. For each logical group:
    a. Stage the relevant files (specific files, not `git add .`)
    b. Write a commit message — imperative, < 72 chars, explains "why"
-   c. Footer: `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
-   d. Show user the file list and message before creating
+   c. Show the file list and message before creating
 5. After all commits, show `git log --oneline -N`
 
 ### Commit message style
@@ -81,7 +80,7 @@ Tag a version and publish to PyPI via GitHub Actions.
 4. Version in `pyproject.toml` and `railguey/__init__.py` match and are bumped
 
 ### Steps
-1. `git tag -a v<VERSION> -m "v<VERSION> — <short description>"` — e.g. `v0.2.0 — first PyPI release`
+1. `git tag -a v<VERSION> -m "v<VERSION> — <short description>"` — e.g. `v0.3.0 — CLI-only release`
 2. `git push --tags`
 3. Monitor: `gh run list --limit 3` — the publish workflow should trigger on the tag
 4. After publish completes, verify on PyPI: `pip index versions railguey` or check https://pypi.org/project/railguey/

@@ -21,11 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install railguey
+        run: pip install railguey
 
       - name: Deploy ${{ matrix.service }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE: ${{ matrix.service }}
-        run: railway up --service "$RAILWAY_SERVICE" --detach
+        run: railguey upload-source "$GITHUB_WORKSPACE" "$RAILWAY_SERVICE" --message "$GITHUB_SHA"

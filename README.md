@@ -1,12 +1,12 @@
 # railguey
 
 <p align="center">
-  <img src="logo.png" alt="railguey" width="500">
+  <img src="https://raw.githubusercontent.com/eidos-agi/railguey/main/logo.png" alt="railguey" width="500">
 </p>
 
 <p align="center">
   Project-scoped Railway CLI.<br>
-  Reads <code>RAILWAY_TOKEN</code> from each project's <code>.env.local</code> — no <code>railway login</code> needed.
+  Reads <code>RAILWAY_TOKEN</code> from each project's <code>.env.local</code>, with no Railway account login or repo linking.
 </p>
 
 <p align="center">
@@ -193,10 +193,10 @@ Railway lets you create [project-scoped tokens](https://docs.railway.com/guides/
 
 | Context | How the token is used |
 |---------|----------------------|
-| **Local dev** | `.env.local` — `railway logs`, `railway up`, etc. |
+| **Local dev** | `.env.local` — `railguey logs`, `railguey upload-source`, etc. |
 | **Agents using railguey** | Call the CLI with a workspace path |
 | **GitHub Actions CI/CD** | Repository secret → `RAILWAY_TOKEN` env var |
-| **Any CI system** | Same — export the token, run `railway up` |
+| **Any CI system** | Same — export the token, run `railguey upload-source` |
 
 One mechanism. No OAuth. No repo linking. No webhook fragility.
 
@@ -219,13 +219,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: curl -fsSL https://railway.com/install.sh | sh
+      - name: Install railguey
+        run: pip install railguey
 
       - name: Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service ${{ vars.RAILWAY_SERVICE }} --detach
+        run: railguey upload-source "$GITHUB_WORKSPACE" "${{ vars.RAILWAY_SERVICE }}" --message "$GITHUB_SHA"
 ```
 
 Set `RAILWAY_SERVICE` as a [repository variable](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables). More examples in [`examples/`](examples/).

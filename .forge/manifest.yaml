@@ -5,9 +5,9 @@
 manifest_version: 1
 
 repo:
-  visibility: private  # Currently private — consider making public for FOSS
+  visibility: public
   org: eidos-agi
-  topics: [railway, cli, deploy, devops, ci-cd]
+  topics: [railway, cli, deploy, devops, ci-cd, github-actions]
 
 packaging:
   build_system: hatchling
