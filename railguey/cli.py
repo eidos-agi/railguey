@@ -169,6 +169,44 @@ def service_delete(workspace, service):
     _output(_run(tools.service_delete(workspace, service)))
 
 
+@main.command("volume-create")
+@click.argument("workspace")
+@click.argument("service")
+@click.argument("mount_path")
+def volume_create(workspace, service, mount_path):
+    """Create a Railway volume and attach it to a service at MOUNT_PATH.
+
+    Project-token-only. Default size is 50 GB. Service redeploys
+    automatically once the volume is attached.
+    """
+    _output(_run(tools.volume_create(workspace, service, mount_path)))
+
+
+@main.command()
+@click.argument("workspace")
+def volumes(workspace):
+    """List all volumes in the Railway project with their mount state."""
+    _output(_run(tools.volumes(workspace)))
+
+
+@main.command("volume-delete")
+@click.argument("workspace")
+@click.argument("volume_id")
+def volume_delete(workspace, volume_id):
+    """Delete a Railway volume. Irreversible — all data on the volume is lost."""
+    _output(_run(tools.volume_delete(workspace, volume_id)))
+
+
+@main.command("volume-resize")
+@click.argument("workspace")
+@click.argument("volume_instance_id")
+@click.argument("size_mb", type=int)
+def volume_resize(workspace, volume_instance_id, size_mb):
+    """Resize a volume instance to SIZE_MB megabytes. Grow-only — Railway
+    rejects shrink. Get VOLUME_INSTANCE_ID from `railguey volumes`."""
+    _output(_run(tools.volume_resize(workspace, volume_instance_id, size_mb)))
+
+
 # ---------------------------------------------------------------------------
 # GraphQL-backed commands
 # ---------------------------------------------------------------------------
