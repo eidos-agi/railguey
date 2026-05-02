@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.9 — First-deploy substrate: service-bootstrap + upload-source + service-delete
+
+- **Fixed**: `service_create` now passes `environmentId` (was creating unusable services). Railway's schema requires it to materialize the per-env service-instance binding. Without it, every subsequent `POST /up` returned 404 "Service instance not found." Discovered 2026-05-02 while bootstrapping `data-daemon-v4-test`.
+- **Added**: `service_bootstrap` — one-call first deploy. `service_create` + `upload_source` for a brand-new service, project-token-only. The agent-facing entry point.
+- **Added**: `upload_source` — tarball workspace + POST to `/project/{p}/environment/{e}/up?serviceId={s}`. The literal "send code via railguey" primitive. Uses stdlib `tarfile` + `httpx`; respects `.gitignore` / `.dockerignore` / `.railwayignore`; hard-excludes `.git`, `node_modules`, `.venv`, `*.cache`; 256MB cap.
+- **Added**: `service_delete` — irreversible service removal. Project-token-only. Useful for cleanup of test or broken services.
+- **CLI**: `railguey service-bootstrap`, `railguey upload-source`, `railguey service-delete` — all wired alongside existing verbs.
+- **MCP**: `railguey_service_bootstrap`, `railguey_upload_source`, `railguey_service_delete` — exposed via MCP server.
+- **Docs**: README "First deploy of a fresh service" section + tools table updated to 21 tools.
+- **Cross-ref**: cerebro-wiki/wiki/architecture/railway-first-deploy.md captures the substrate finding.
+- **Live-verified**: bootstrapped fresh `dd4t` service end-to-end via `railguey service-bootstrap`; row landed in `dd4t.deploy_proof` from a Railway container hostname (not local).
+
 ## v0.2.8 — GraphQL drift fix + structural CLI removal
 
 - **Fixed**: `Query.workspace` argument renamed by Railway from `id` to `workspaceId`. `railguey_projects` was returning `Unknown argument "id" on field "Query.workspace"`. Updated the `list_projects` query to use `workspaceId: String!`. Live-verified end-to-end against the Eidos workspace (11 projects returned).

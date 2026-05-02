@@ -1160,19 +1160,24 @@ async def service_create(
     workspace: str,
     name: str,
 ) -> dict:
-    """Create a new empty service in a Railway project.
+    """Create a new service in a Railway project, bound to the token's environment.
 
-    Uses the project-scoped token from workspace/.env.local.
-    After creation, the service exists but has no deployments —
-    use railguey_deploy or link a GitHub repo to trigger the first build.
+    Uses the project-scoped token from workspace/.env.local. The service is
+    created with an instance in the project token's environment, ready for
+    `upload_source` or `service_bootstrap` to run the first deploy.
+
+    Earlier versions of this function omitted environmentId, which left the
+    service without a per-env instance binding — every subsequent /up call
+    returned 404 "Service instance not found." Passing environmentId fixes that.
     """
     token = _load_token(workspace)
     project = await _resolve_project(token)
     if "error" in project:
         return project
     project_id = project.get("projectId")
-    if not project_id:
-        return {"error": "Could not resolve projectId from token"}
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
 
     query = """
     mutation serviceCreate($input: ServiceCreateInput!) {
@@ -1180,7 +1185,15 @@ async def service_create(
     }
     """
     result = await _gql(
-        token, query, {"input": {"name": name, "projectId": project_id}}
+        token,
+        query,
+        {
+            "input": {
+                "name": name,
+                "projectId": project_id,
+                "environmentId": environment_id,
+            }
+        },
     )
     if "error" in result:
         return result
@@ -1191,6 +1204,322 @@ async def service_create(
         "serviceId": svc.get("id", ""),
         "serviceName": svc.get("name", name),
         "projectId": project_id,
+        "environmentId": environment_id,
+    }
+
+
+# ── First-deploy primitives: upload-source / service-bootstrap / service-delete ──
+#
+# Discovered 2026-05-02 while bootstrapping data-daemon-v4-test (`dd4t`).
+# Brand-new services with no env-instance reject `railway up` (404). The fix
+# is the env-id added to service_create above + these three primitives, all
+# project-token-only:
+#
+#   upload_source     → tarball workspace + POST /up?serviceId=X (raw gzip body)
+#   service_bootstrap → service_create + upload_source (one-call first deploy)
+#   service_delete    → cleanup
+#
+# Cross-ref: cerebro-wiki/wiki/architecture/railway-first-deploy.md
+
+
+def _build_tarball(workspace_path: Path) -> bytes:
+    """Build an in-memory gzipped tarball of a workspace.
+
+    Walks the directory respecting .gitignore + .dockerignore + .railwayignore
+    using fnmatch (90% gitignore semantics — no negation, no nested ** globs).
+    Hard-excludes .git, node_modules, .venv, __pycache__, *.cache directories.
+    Files included with arcname=relative_path so archive root is `./`.
+
+    Raises ValueError if total size exceeds 256MB (use .railwayignore to trim).
+    """
+    import fnmatch
+    import io
+    import os
+    import tarfile
+
+    HARD_EXCLUDED = {
+        ".git",
+        "node_modules",
+        ".venv",
+        "__pycache__",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".pytest_cache",
+    }
+    MAX_SIZE = 256 * 1024 * 1024  # 256 MB
+
+    # Read ignore files
+    patterns: list[str] = []
+    for fname in (".gitignore", ".dockerignore", ".railwayignore"):
+        p = workspace_path / fname
+        if p.is_file():
+            for line in p.read_text(errors="ignore").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line.rstrip("/"))
+
+    def is_ignored(rel: str) -> bool:
+        # Check any path component against hard-excludes
+        parts = rel.replace(os.sep, "/").split("/")
+        if any(p in HARD_EXCLUDED for p in parts):
+            return True
+        # Check fnmatch patterns against full path AND basename
+        base = parts[-1]
+        for pat in patterns:
+            if fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(base, pat):
+                return True
+            # Match any path-segment against pattern (covers `dir/` style)
+            if any(fnmatch.fnmatch(p, pat) for p in parts):
+                return True
+        return False
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for root, dirs, files in os.walk(workspace_path):
+            # Prune dirs in-place so os.walk doesn't descend into excluded ones
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in HARD_EXCLUDED
+                and not is_ignored(
+                    os.path.relpath(os.path.join(root, d), workspace_path)
+                )
+            ]
+            for f in files:
+                full = os.path.join(root, f)
+                rel = os.path.relpath(full, workspace_path)
+                if is_ignored(rel):
+                    continue
+                arcname = "./" + rel.replace(os.sep, "/")
+                tar.add(full, arcname=arcname)
+
+    body = buf.getvalue()
+    if len(body) > MAX_SIZE:
+        raise ValueError(
+            f"Workspace tarball is {len(body) // (1024 * 1024)} MB (max 256 MB). "
+            f"Add patterns to .railwayignore to trim what gets uploaded."
+        )
+    return body
+
+
+async def upload_source(
+    workspace: str,
+    service: str,
+    message: Optional[str] = None,
+) -> dict:
+    """Tarball workspace, POST to Railway's /up endpoint, trigger a deploy.
+
+    Project-token-only. The literal "send code via railguey" primitive.
+    Uses POST https://backboard.railway.com/project/{p}/environment/{e}/up
+    with `Project-Access-Token` header + `Content-Type: application/gzip`
+    + raw gzipped tarball as body (NOT multipart).
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name (must exist; create with service_create
+            or service_bootstrap first).
+        message: Optional deploy message (shown in Railway UI).
+
+    Returns dict with deploymentId, url, logsUrl, deploymentDomain, tarballBytes.
+    """
+    import httpx
+
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {
+            "error": (
+                f"Service '{service}' not found in project. "
+                f"Create it first with `railguey service-create` or "
+                f"`railguey service-bootstrap`."
+            )
+        }
+
+    # Build tarball
+    try:
+        body = _build_tarball(Path(workspace))
+    except ValueError as e:
+        return {"error": str(e)}
+
+    url = (
+        f"https://backboard.railway.com/project/{project_id}"
+        f"/environment/{environment_id}/up"
+    )
+    params: dict[str, str] = {"serviceId": service_id}
+    if message:
+        params["message"] = message
+
+    async with httpx.AsyncClient(timeout=300) as client:
+        resp = await client.post(
+            url,
+            params=params,
+            content=body,
+            headers={
+                "Project-Access-Token": token,
+                "Content-Type": "application/gzip",
+            },
+        )
+
+    if resp.status_code == 200:
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        deployment_id = data.get("deploymentId", "")
+        return {
+            "uploaded": True,
+            "service": service,
+            "serviceId": service_id,
+            "deploymentId": deployment_id,
+            "url": data.get("url", ""),
+            "logsUrl": data.get("logsUrl", ""),
+            "deploymentDomain": data.get("deploymentDomain", ""),
+            "tarballBytes": len(body),
+        }
+
+    # Non-200 — return Railway's error message verbatim if possible
+    try:
+        err = resp.json().get("message", resp.text[:300])
+    except Exception:
+        err = resp.text[:300]
+    return {
+        "error": f"Upload failed (HTTP {resp.status_code}): {err}",
+        "service": service,
+        "serviceId": service_id,
+        "tarballBytes": len(body),
+    }
+
+
+async def service_bootstrap(
+    workspace: str,
+    name: str,
+    message: Optional[str] = None,
+) -> dict:
+    """First-deploy a fresh service in one call: service_create + upload_source.
+
+    The agent-facing one-call path. If the service already exists in the
+    project token's environment, just uploads. If absent, creates the service
+    (with environmentId, so the instance materializes) then uploads.
+
+    Refuses to upload to an existing service that has no instance in the
+    token's environment — that's the dd4t-broken state. Returns a clear
+    error pointing at `service_delete` + re-bootstrap.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        name: Service name to bootstrap.
+        message: Optional deploy message.
+
+    Returns dict with bootstrapped, service, serviceId, createdNew, deploymentId.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, name)
+    created_new = False
+
+    if service_id:
+        # Service exists. Check whether it has an instance in this env.
+        check_query = """
+        query checkInstance($projectId: String!) {
+          project(id: $projectId) {
+            services { edges { node { id name serviceInstances { edges { node { environmentId } } } } } }
+          }
+        }
+        """
+        check = await _gql(token, check_query, {"projectId": project_id})
+        if "error" not in check:
+            services = check.get("project", {}).get("services", {}).get("edges", [])
+            for edge in services:
+                node = edge.get("node", {})
+                if node.get("id") != service_id:
+                    continue
+                instances = node.get("serviceInstances", {}).get("edges", [])
+                env_ids = [i.get("node", {}).get("environmentId") for i in instances]
+                if environment_id not in env_ids:
+                    return {
+                        "error": (
+                            f"Service '{name}' exists but has no instance in this "
+                            f"environment. Delete it first (`railguey service-delete`) "
+                            f"then re-bootstrap. This is the dd4t-broken state — see "
+                            f"cerebro-wiki/wiki/architecture/railway-first-deploy.md."
+                        ),
+                        "service": name,
+                        "serviceId": service_id,
+                    }
+                break
+    else:
+        # Service absent — create it.
+        create_result = await service_create(workspace, name)
+        if "error" in create_result:
+            return create_result
+        service_id = create_result.get("serviceId", "")
+        if not service_id:
+            return {"error": "service_create returned no serviceId"}
+        created_new = True
+
+    # Upload source.
+    upload_result = await upload_source(workspace, name, message=message)
+    if "error" in upload_result:
+        return {**upload_result, "createdNew": created_new}
+
+    return {
+        "bootstrapped": True,
+        "service": name,
+        "serviceId": service_id,
+        "createdNew": created_new,
+        "deploymentId": upload_result.get("deploymentId", ""),
+        "url": upload_result.get("url", ""),
+        "logsUrl": upload_result.get("logsUrl", ""),
+        "tarballBytes": upload_result.get("tarballBytes", 0),
+    }
+
+
+async def service_delete(workspace: str, service: str) -> dict:
+    """Delete a service from a Railway project. Irreversible.
+
+    Uses the project-scoped token from workspace/.env.local. Project tokens
+    are sufficient for this mutation (verified 2026-05-02).
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    if not project_id:
+        return {"error": "Could not resolve projectId from token"}
+
+    service_id = await _resolve_service_id(token, project_id, service)
+    if not service_id:
+        return {"error": f"Service '{service}' not found in project"}
+
+    query = """
+    mutation serviceDelete($id: String!) {
+      serviceDelete(id: $id)
+    }
+    """
+    result = await _gql(token, query, {"id": service_id})
+    if "error" in result:
+        return result
+
+    return {
+        "deleted": True,
+        "service": service,
+        "serviceId": service_id,
     }
 
 
@@ -1599,6 +1928,9 @@ __all__ = [
     "project_delete",
     "project_transfer",
     "service_update",
+    "service_delete",
+    "service_bootstrap",
+    "upload_source",
     "volume_create",
     "volumes",
     "volume_delete",
