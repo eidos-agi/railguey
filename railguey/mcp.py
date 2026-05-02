@@ -586,16 +586,69 @@ async def railguey_service_update(
 
 @mcp.tool()
 async def railguey_service_create(workspace: str, name: str) -> dict:
-    """Create a new empty service in a Railway project.
+    """Create a new service bound to the project token's environment.
 
-    After creation, the service exists but has no deployments.
-    Use railguey_deploy or connect a GitHub repo to trigger the first build.
+    The service is created with an instance ready for first deploy. Use
+    railguey_upload_source (or one-call railguey_service_bootstrap) to
+    push code and trigger the first build.
 
     Args:
         workspace: Absolute path to project directory with .env.local.
         name: Name for the new service.
     """
     return await tools.service_create(workspace, name)
+
+
+@mcp.tool()
+async def railguey_upload_source(
+    workspace: str,
+    service: str,
+    message: Optional[str] = None,
+) -> dict:
+    """Tarball the workspace + POST to Railway's /up endpoint to deploy.
+
+    Project-token-only. The literal "send code via railguey" primitive.
+    Service must exist (use railguey_service_create or railguey_service_bootstrap).
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name to deploy to.
+        message: Optional deploy message (shown in Railway UI).
+    """
+    return await tools.upload_source(workspace, service, message)
+
+
+@mcp.tool()
+async def railguey_service_bootstrap(
+    workspace: str,
+    name: str,
+    message: Optional[str] = None,
+) -> dict:
+    """First-deploy a fresh service in one call: service_create + upload_source.
+
+    The agent-facing one-call path for standing up a brand-new Railway service.
+    Refuses to bootstrap an existing service that lacks an env-instance —
+    points at service_delete + re-bootstrap to recover.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        name: Service name to bootstrap.
+        message: Optional deploy message.
+    """
+    return await tools.service_bootstrap(workspace, name, message)
+
+
+@mcp.tool()
+async def railguey_service_delete(workspace: str, service: str) -> dict:
+    """Delete a service from the Railway project. Irreversible.
+
+    Project-token-only. Useful for cleanup of test or broken services.
+
+    Args:
+        workspace: Absolute path to project directory with .env.local.
+        service: Railway service name to delete.
+    """
+    return await tools.service_delete(workspace, service)
 
 
 # ── Orchestration tools ─────────────────────────────────────────────

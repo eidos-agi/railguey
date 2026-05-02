@@ -65,7 +65,7 @@ If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If
 ## Known limitations
 
 - **All tools depend on Railway's Backboard GraphQL API**, which isn't officially documented. The schema could change without notice.
-- **No Railway CLI required.** All 17 tools use pure GraphQL with project-scoped tokens. The CLI backend module still exists for backward compatibility but is no longer used by any tool.
+- **No Railway CLI required.** All 21 tools use pure GraphQL with project-scoped tokens. The CLI backend module still exists for backward compatibility but is no longer used by any tool.
 - **One token per project.** Project-scoped tokens can't query across projects. If you manage 10 projects, you need 10 `.env.local` files in 10 workspaces. This is by design (isolation), but it's more setup than a user-level login.
 
 ## Install
@@ -95,7 +95,7 @@ pip install -e .
 
 ## CLI usage
 
-`pip install railguey` gives you the `railguey` command with all 17 tools as subcommands:
+`pip install railguey` gives you the `railguey` command with all 21 tools as subcommands:
 
 ```bash
 railguey status ~/repos/my-app
@@ -163,9 +163,23 @@ Or manually in `~/.claude.json`:
 
 </details>
 
+## First deploy of a fresh service
+
+A brand-new Railway service needs both a `serviceCreate` mutation (with `environmentId` so the per-env instance materializes) AND a source upload to be deployable. railguey collapses this to one verb:
+
+```sh
+railguey service-bootstrap /path/to/repo my-service
+```
+
+Under the hood: `serviceCreate` with the project-token's `environmentId` (Railway requires this), then a gzipped tarball of the workspace POSTed to `https://backboard.railway.com/project/{p}/environment/{e}/up?serviceId={s}` — both project-token-only, no GitHub-Railway link, no account-level auth.
+
+The tarball respects `.gitignore`, `.dockerignore`, and `.railwayignore` (90% of `.gitignore` semantics — no negation, no nested `**`); `.git`, `node_modules`, `.venv`, and `*.cache` directories are always excluded. Hard-cap of 256MB; use `.railwayignore` to trim larger workspaces.
+
+For subsequent deploys, use `railguey upload-source` (just upload — service already exists) or `railguey deploy` (redeploy from existing source).
+
 ## Tools
 
-17 tools, all pure GraphQL. No Railway CLI required — just a project-scoped token.
+21 tools, all pure GraphQL. No Railway CLI required — just a project-scoped token.
 
 | Tool | What it does |
 |------|-------------|
@@ -185,6 +199,10 @@ Or manually in `~/.claude.json`:
 | `railguey_http_logs` | HTTP request logs — status codes, latency, paths |
 | `railguey_deployment_logs` | Logs for a specific deployment by ID (deploy or build, with filter) |
 | `railguey_unlink_repo` | Disconnect a service from GitHub repo linking |
+| `railguey_service_create` | Create a service bound to the project token's environment |
+| `railguey_upload_source` | Tarball workspace + POST to Railway `/up` — deploy via project token |
+| `railguey_service_bootstrap` | One-call first deploy: `service_create` + `upload_source` |
+| `railguey_service_delete` | Delete a service from the Railway project (irreversible) |
 
 ### Coaching tools
 

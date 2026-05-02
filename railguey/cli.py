@@ -121,6 +121,45 @@ def environment_create(workspace, name):
     _output(_run(tools.environment_create(workspace, name)))
 
 
+@main.command("service-create")
+@click.argument("workspace")
+@click.argument("name")
+def service_create(workspace, name):
+    """Create a new service bound to the project token's environment.
+
+    The service is created with an instance ready for first deploy. Use
+    `railguey upload-source` (or one-call `railguey service-bootstrap`) to
+    push code and trigger the first build.
+    """
+    _output(_run(tools.service_create(workspace, name)))
+
+
+@main.command("upload-source")
+@click.argument("workspace")
+@click.argument("service")
+@click.option("--message", default=None, help="Optional deploy message.")
+def upload_source(workspace, service, message):
+    """Tarball workspace + POST to Railway /up — trigger a deploy via project token."""
+    _output(_run(tools.upload_source(workspace, service, message)))
+
+
+@main.command("service-bootstrap")
+@click.argument("workspace")
+@click.argument("name")
+@click.option("--message", default=None, help="Optional deploy message.")
+def service_bootstrap(workspace, name, message):
+    """Create service (if absent) AND upload first source — one-call first deploy."""
+    _output(_run(tools.service_bootstrap(workspace, name, message)))
+
+
+@main.command("service-delete")
+@click.argument("workspace")
+@click.argument("service")
+def service_delete(workspace, service):
+    """Delete a service from the Railway project. Irreversible."""
+    _output(_run(tools.service_delete(workspace, service)))
+
+
 # ---------------------------------------------------------------------------
 # GraphQL-backed commands
 # ---------------------------------------------------------------------------
