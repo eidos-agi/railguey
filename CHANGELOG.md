@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.10 — CLI exit-non-zero on tool error (was silently passing in CI)
+
+- **Fixed**: `_output()` now exits with code 1 when the tool result dict contains an `"error"` key. Previously, every CLI verb returned exit code 0 regardless of whether the underlying API call succeeded — meaning `gh actions` showing green for `railguey upload-source` deploys that actually 404'd. Caught 2026-05-02 in `data-daemon-v4-test`'s GHA workflow: `Upload failed (HTTP 404): Service instance not found` was emitted as JSON to stdout, but the GHA step succeeded, masking a real deploy failure (in this case, dd4t-bootstrapped-in-production-but-token-was-develop, but that's unrelated to the exit-code bug). Any pipeline that consumes railguey JSON via `--json` was unaffected; pipelines that just check exit codes were broken.
+- **Cross-ref**: `cerebro-wiki/wiki/architecture/railway-first-deploy.md` updated to reflect that "fresh service deploy" diagnosis can also surface as a cross-environment-token mismatch.
+
 ## v0.2.9 — First-deploy substrate: service-bootstrap + upload-source + service-delete
 
 - **Fixed**: `service_create` now passes `environmentId` (was creating unusable services). Railway's schema requires it to materialize the per-env service-instance binding. Without it, every subsequent `POST /up` returned 404 "Service instance not found." Discovered 2026-05-02 while bootstrapping `data-daemon-v4-test`.
