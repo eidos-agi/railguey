@@ -1238,8 +1238,13 @@ def _build_tarball(workspace_path: Path) -> bytes:
     import tarfile
 
     HARD_EXCLUDED = {
-        ".git", "node_modules", ".venv", "__pycache__",
-        ".ruff_cache", ".mypy_cache", ".pytest_cache",
+        ".git",
+        "node_modules",
+        ".venv",
+        "__pycache__",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".pytest_cache",
     }
     MAX_SIZE = 256 * 1024 * 1024  # 256 MB
 
@@ -1273,9 +1278,12 @@ def _build_tarball(workspace_path: Path) -> bytes:
         for root, dirs, files in os.walk(workspace_path):
             # Prune dirs in-place so os.walk doesn't descend into excluded ones
             dirs[:] = [
-                d for d in dirs
+                d
+                for d in dirs
                 if d not in HARD_EXCLUDED
-                and not is_ignored(os.path.relpath(os.path.join(root, d), workspace_path))
+                and not is_ignored(
+                    os.path.relpath(os.path.join(root, d), workspace_path)
+                )
             ]
             for f in files:
                 full = os.path.join(root, f)
@@ -1288,7 +1296,7 @@ def _build_tarball(workspace_path: Path) -> bytes:
     body = buf.getvalue()
     if len(body) > MAX_SIZE:
         raise ValueError(
-            f"Workspace tarball is {len(body) // (1024*1024)} MB (max 256 MB). "
+            f"Workspace tarball is {len(body) // (1024 * 1024)} MB (max 256 MB). "
             f"Add patterns to .railwayignore to trim what gets uploaded."
         )
     return body
@@ -1366,13 +1374,6 @@ async def upload_source(
         except Exception:
             data = {}
         deployment_id = data.get("deploymentId", "")
-        update_topology(
-            workspace,
-            service,
-            deploy_status="BUILDING",
-            deploy_id=deployment_id,
-            operation="upload_source",
-        )
         return {
             "uploaded": True,
             "service": service,
@@ -1442,9 +1443,7 @@ async def service_bootstrap(
         """
         check = await _gql(token, check_query, {"projectId": project_id})
         if "error" not in check:
-            services = (
-                check.get("project", {}).get("services", {}).get("edges", [])
-            )
+            services = check.get("project", {}).get("services", {}).get("edges", [])
             for edge in services:
                 node = edge.get("node", {})
                 if node.get("id") != service_id:
@@ -1478,7 +1477,6 @@ async def service_bootstrap(
     if "error" in upload_result:
         return {**upload_result, "createdNew": created_new}
 
-    update_topology(workspace, name, operation="service_bootstrap")
     return {
         "bootstrapped": True,
         "service": name,
@@ -1518,7 +1516,6 @@ async def service_delete(workspace: str, service: str) -> dict:
     if "error" in result:
         return result
 
-    update_topology(workspace, service, operation="service_delete")
     return {
         "deleted": True,
         "service": service,
