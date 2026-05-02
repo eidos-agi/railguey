@@ -20,7 +20,6 @@ class TestCLI:
         assert "status" in result.output
         assert "logs" in result.output
         assert "deploy" in result.output
-        assert "serve" in result.output
 
     def test_status_help(self):
         runner = CliRunner()
@@ -35,12 +34,6 @@ class TestCLI:
         assert "--lines" in result.output
         assert "--build" in result.output
         assert "--filter" in result.output
-
-    def test_serve_help(self):
-        runner = CliRunner()
-        result = runner.invoke(main, ["serve", "--help"])
-        assert result.exit_code == 0
-        assert "MCP" in result.output
 
     def test_doctor_help(self):
         runner = CliRunner()
@@ -121,8 +114,11 @@ class TestCLI:
             "deployment-logs",
             "unlink-repo",
             "environment-create",
+            "service-create",
+            "upload-source",
+            "service-bootstrap",
+            "service-delete",
             "doctor",
-            "serve",
         ]
         for cmd in expected:
             assert cmd in result.output, f"Missing command: {cmd}"

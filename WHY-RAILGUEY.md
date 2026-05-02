@@ -164,9 +164,9 @@ This is a general trap for any Dockerized Next.js app on Railway: **runtime env 
 
 ## What railguey does about it
 
-railguey isn't just an alternative MCP server — it's opinionated about how Railway deployments should work.
+railguey isn't just an alternative deploy wrapper — it's opinionated about how Railway deployments should work.
 
-### `railguey_doctor` — audit your setup
+### `railguey doctor` — audit your setup
 
 Checks every workspace for four best practices:
 
@@ -175,9 +175,9 @@ Checks every workspace for four best practices:
 3. **GitHub Actions deploy workflow** — token-based CI/CD, not repo linking
 4. **No GitHub repo linking** — actively warns if services are linked
 
-### `railguey_unlink_repo` — fix it in one call
+### `railguey unlink-repo` — fix it in one call
 
-Disconnects a service from its linked GitHub repo via the Backboard GraphQL API (`serviceDisconnect` mutation). After unlinking, `railguey_doctor` points you to the CI/CD workflow examples.
+Disconnects a service from its linked GitHub repo via the Backboard GraphQL API (`serviceDisconnect` mutation). After unlinking, `railguey doctor` points you to the CI/CD workflow examples.
 
 ### Copy-paste CI/CD workflows
 

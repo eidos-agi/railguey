@@ -1,4 +1,4 @@
-"""Token discovery — account override, then workspace .env files."""
+"""Token discovery from workspace .env files."""
 
 from pathlib import Path
 
@@ -6,11 +6,9 @@ from pathlib import Path
 def _load_project_token(workspace: str) -> str:
     """Resolve a PROJECT-scoped Railway token from workspace .env files.
 
-    Skips the account system entirely. Some Railway GraphQL mutations
-    (volumeCreate, volumeDelete, volumeInstanceUpdate) require a
-    project-scoped token and reject account tokens with
-    "Project Token not found" — for those, call this function instead
-    of _load_token.
+    railguey is intentionally workspace-scoped: the CLI reads the token from
+    the workspace it was asked to operate on instead of consulting global
+    account state. That keeps CI and agents deterministic.
     """
     ws = Path(workspace).expanduser().resolve()
     for filename in (".env.local", ".env"):
@@ -34,30 +32,5 @@ def _load_project_token(workspace: str) -> str:
 
 
 def _load_token(workspace: str) -> str:
-    """Resolve a Railway token.
-
-    Priority:
-    1. Default account in ~/.railguey/accounts.json (if one is set)
-    2. RAILWAY_TOKEN in workspace/.env.local (then .env as fallback)
-
-    The account system acts as an explicit override — when you call
-    railguey_account_default('production'), ALL tools switch to the
-    production token regardless of what's in .env.local. This is the
-    core use case: briefly operate on a different environment without
-    swapping .env files.
-
-    When no account is configured, falls back to workspace .env files.
-
-    NOTE: Volume mutations require a project-scoped token — use
-    _load_project_token() instead for those.
-    """
-    # 1. Account system override
-    try:
-        from railguey.lib.accounts import get_account_token
-
-        return get_account_token()
-    except (ValueError, ImportError):
-        pass
-
-    # 2. Workspace .env files (fall back to project-token reader)
+    """Resolve a Railway token from workspace/.env.local or workspace/.env."""
     return _load_project_token(workspace)

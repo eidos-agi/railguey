@@ -1,14 +1,14 @@
 [project]
 name = "railguey"
-version = "0.2.10"
-description = "Project-scoped Railway MCP server — reads RAILWAY_TOKEN from .env.local, no login needed"
+version = "0.3.0"
+description = "Project-scoped Railway CLI — reads RAILWAY_TOKEN from .env.local, no login needed"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
     { name = "Daniel Shanklin", email = "daniel@eidosagi.com" },
 ]
-keywords = ["railway", "mcp", "deploy", "devops", "model-context-protocol"]
+keywords = ["railway", "cli", "deploy", "devops", "ci-cd"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
@@ -21,11 +21,9 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "mcp>=1.0.0",
     "httpx>=0.27.0",
     "click>=8.0.0",
     "pyyaml>=6.0",
-    "qrcode[pil]>=7.0",
 ]
 
 [project.optional-dependencies]
@@ -36,7 +34,6 @@ dev = [
 
 [project.scripts]
 railguey = "railguey.cli:main"
-railguey-mcp = "railguey:run"
 
 [project.urls]
 Homepage = "https://github.com/eidos-agi/railguey"

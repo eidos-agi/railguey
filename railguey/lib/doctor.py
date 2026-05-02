@@ -805,7 +805,7 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
                     "check": "Deployment health",
                     "status": "fail",
                     "message": f"{svc_name}: latest deployment {status}",
-                    "fix": "Check railguey_deployment_logs for error details",
+                    "fix": "Check railguey deployment-logs for error details",
                 }
             )
     else:
@@ -814,7 +814,7 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
                 "check": "Deployment health",
                 "status": "warn",
                 "message": f"{svc_name}: no deployments found",
-                "fix": "Deploy with railguey_deploy or push to trigger CI/CD",
+                "fix": "Deploy with railguey deploy or push to trigger CI/CD",
             }
         )
 
@@ -835,7 +835,7 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
                 "check": "Domain",
                 "status": "warn",
                 "message": f"{svc_name}: no public domain configured",
-                "fix": "Use railguey_domain to generate one (or skip if this is a background worker)",
+                "fix": "Use railguey domain to generate one (or skip if this is a background worker)",
             }
         )
 
@@ -871,7 +871,7 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
                             "check": "Deploy drift",
                             "status": "warn",
                             "message": f"{svc_name}: local code is {mins}m ahead of deployed code",
-                            "fix": "Push to trigger CI/CD or run railguey_deploy",
+                            "fix": "Push to trigger CI/CD or run railguey deploy",
                         }
                     )
                 else:
@@ -917,44 +917,20 @@ async def doctor_service_level(workspace: str, service: str | None = None) -> di
         workflow_envs = set(wf["environments"])
         uncovered = workflow_envs - {token_env_name}
         if uncovered:
-            # Check if the account system covers the gap
-            try:
-                from railguey.lib.accounts import list_accounts
-
-                accts = list_accounts()
-                acct_names = set(accts.get("accounts", {}).keys())
-                has_accounts = len(acct_names) >= 2
-            except Exception:
-                has_accounts = False
-
-            if has_accounts:
-                score += 1
-                findings.append(
-                    {
-                        "check": "Token environment scope",
-                        "status": "pass",
-                        "message": (
-                            f"Token scoped to '{token_env_name}' but "
-                            f"account system covers {', '.join(sorted(uncovered))} — "
-                            f"use railguey_account_default to switch"
-                        ),
-                    }
-                )
-            else:
-                findings.append(
-                    {
-                        "check": "Token environment scope",
-                        "status": "fail",
-                        "message": (
-                            f"Token scoped to '{token_env_name}' but workflow targets: "
-                            f"{', '.join(sorted(uncovered))}"
-                        ),
-                        "fix": (
-                            "Register tokens for each environment with railguey_account_add, "
-                            "then switch with railguey_account_default"
-                        ),
-                    }
-                )
+            findings.append(
+                {
+                    "check": "Token environment scope",
+                    "status": "fail",
+                    "message": (
+                        f"Token scoped to '{token_env_name}' but workflow targets: "
+                        f"{', '.join(sorted(uncovered))}"
+                    ),
+                    "fix": (
+                        "Use a workspace/CI token for the same Railway environment "
+                        "the workflow deploys to."
+                    ),
+                }
+            )
         else:
             score += 1
             findings.append(
@@ -1097,7 +1073,7 @@ async def doctor_project_level(workspace: str) -> dict:
                 "status": "warn",
                 "message": f"{len(linked)} service(s) linked to GitHub repos (brittle auto-deploy)",
                 "linked": linked,
-                "fix": "Use railguey_unlink_repo, then set up GitHub Actions CI/CD",
+                "fix": "Use railguey unlink-repo, then set up GitHub Actions CI/CD",
             }
         )
     else:
@@ -1129,7 +1105,7 @@ async def doctor_project_level(workspace: str) -> dict:
                 "check": "Deployment health",
                 "status": "fail",
                 "message": f"Failed: {', '.join(failed)}",
-                "fix": "Check railguey_deployment_logs for each failed service",
+                "fix": "Check railguey deployment-logs for each failed service",
             }
         )
     elif in_progress:
@@ -1160,7 +1136,7 @@ async def doctor_project_level(workspace: str) -> dict:
                 "check": "Domain coverage",
                 "status": "warn",
                 "message": f"No domain: {', '.join(no_domain)}",
-                "fix": "Use railguey_domain (or skip for background workers)",
+                "fix": "Use railguey domain (or skip for background workers)",
             }
         )
     else:
@@ -1287,7 +1263,7 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
                     "detail": "Get from Railway dashboard > Project > Settings > Tokens",
                     "file": ".env.local",
                     "format": "RAILWAY_TOKEN=<token>",
-                    "suggested_tool": "railguey_variable_set or manual edit",
+                    "suggested_tool": "railguey variable-set or manual edit",
                 }
             )
         elif check == ".gitignore":
@@ -1321,7 +1297,7 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
                 remediation.append(
                     {
                         "intent": f"Unlink {svc['service']} from {svc['repo']}",
-                        "suggested_tool": "railguey_unlink_repo",
+                        "suggested_tool": "railguey unlink-repo",
                     }
                 )
         elif check == "Token environment scope":
@@ -1329,7 +1305,7 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
                 {
                     "intent": "Fix token environment coverage",
                     "detail": f["message"],
-                    "suggested_tool": "railguey_account_add + railguey_account_default",
+                    "suggested_tool": "Use a matching workspace .env.local or CI secret",
                 }
             )
         elif check == "Environment names":
@@ -1353,7 +1329,7 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
                 {
                     "intent": "Configure domain",
                     "detail": f["message"],
-                    "suggested_tool": "railguey_domain",
+                    "suggested_tool": "railguey domain",
                 }
             )
         elif check == "Deploy drift":
@@ -1361,7 +1337,7 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
                 {
                     "intent": "Deploy latest code",
                     "detail": f["message"],
-                    "suggested_tool": "railguey_deploy or git push",
+                    "suggested_tool": "railguey deploy or git push",
                 }
             )
         elif check == "Deployment health":
@@ -1369,7 +1345,7 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
                 {
                     "intent": "Fix failed deployments",
                     "detail": f["message"],
-                    "suggested_tool": "railguey_deployment_logs then railguey_redeploy",
+                    "suggested_tool": "railguey deployment-logs then railguey redeploy",
                 }
             )
         elif check == "CI/CD health":
@@ -1402,11 +1378,11 @@ def _build_remediation(findings: list, wf: dict) -> tuple[list, list]:
             },
             {
                 "intent": "Confirm Railway deployment landed",
-                "suggested_tool": "railguey_deployments",
+                "suggested_tool": "railguey deployments",
             },
             {
                 "intent": "Re-run doctor to confirm all checks pass",
-                "suggested_tool": "railguey_doctor",
+                "suggested_tool": "railguey doctor",
             },
         ]
 

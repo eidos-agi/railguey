@@ -26,6 +26,7 @@ from railguey.lib.tools import (
     deployment_logs,
     unlink_repo,
     service_update,
+    upload_source,
 )
 
 # ---------------------------------------------------------------------------
@@ -944,6 +945,107 @@ def _patch_user_token_missing():
         "railguey.lib.tools._load_user_token",
         side_effect=ValueError("No Railway account token found"),
     )
+
+
+class _FakeUploadResponse:
+    status_code = 404
+    text = "Service instance not found"
+
+    def json(self):
+        return {"message": "Service instance not found"}
+
+
+class _FakeUploadClient:
+    def __init__(self, *args, **kwargs):
+        self.post_calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, *args, **kwargs):
+        self.post_calls.append((args, kwargs))
+        return _FakeUploadResponse()
+
+
+class TestUploadSource:
+    async def test_404_service_instance_mismatch_is_diagnosed(
+        self, workspace_with_token
+    ):
+        """A cross-env token mismatch should not look like a generic 404."""
+        project_topology = {
+            "project": {
+                "environments": {
+                    "edges": [
+                        {"node": {"id": "env-xyz", "name": "develop"}},
+                        {"node": {"id": "env-prod", "name": "production"}},
+                    ]
+                },
+                "services": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "svc-111",
+                                "name": "dd4t",
+                                "serviceInstances": {
+                                    "edges": [{"node": {"environmentId": "env-prod"}}]
+                                },
+                            }
+                        }
+                    ]
+                },
+            }
+        }
+
+        with (
+            _patch_project(),
+            _patch_service_id(),
+            _patch_gql(project_topology),
+            patch("httpx.AsyncClient", _FakeUploadClient),
+        ):
+            result = await upload_source(str(workspace_with_token), "dd4t")
+
+        assert result["diagnostic"] == "service_instance_environment_mismatch"
+        assert "develop" in result["error"]
+        assert "production" in result["error"]
+        assert result["railwayError"] == "Service instance not found"
+        assert result["serviceInstanceBindings"] == [
+            {"environmentId": "env-prod", "environmentName": "production"}
+        ]
+
+    async def test_404_falls_back_when_no_cross_env_evidence(
+        self, workspace_with_token
+    ):
+        """If topology does not explain the 404, preserve the raw Railway error."""
+        project_topology = {
+            "project": {
+                "environments": {"edges": []},
+                "services": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "svc-111",
+                                "name": "dd4t",
+                                "serviceInstances": {"edges": []},
+                            }
+                        }
+                    ]
+                },
+            }
+        }
+
+        with (
+            _patch_project(),
+            _patch_service_id(),
+            _patch_gql(project_topology),
+            patch("httpx.AsyncClient", _FakeUploadClient),
+        ):
+            result = await upload_source(str(workspace_with_token), "dd4t")
+
+        assert result["error"] == "Upload failed (HTTP 404): Service instance not found"
+        assert "diagnostic" not in result
 
 
 class TestServiceUpdate:

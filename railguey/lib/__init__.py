@@ -2,7 +2,7 @@
 
 railguey never invokes the `railway` CLI. Not internally, not as a fallback,
 not from any code path. All Railway operations go through the Backboard
-GraphQL API. See `mcp.py` INSTRUCTIONS for the rule and rationale.
+GraphQL/API surface behind the railguey CLI.
 """
 
 from railguey.lib.token import _load_token

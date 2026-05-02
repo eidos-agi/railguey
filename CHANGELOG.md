@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.0 — CLI-only railguey + cross-env upload diagnostics
+
+- **Breaking**: railguey is now CLI-only. Removed the MCP server, `railguey serve`, the `railguey-mcp` console script, and the `mcp` package dependency. Agents should call the `railguey` CLI directly and rely on its JSON output plus nonzero error exits.
+- **Simplified**: Dropped the mandatory `qrcode[pil]` dependency because TOTP helpers are no longer part of the public CLI path.
+- **Breaking**: CLI token discovery is workspace-scoped again. `_load_token()` no longer consults `~/.railguey/accounts.json` before `.env.local`, removing hidden global state that could point a deploy at the wrong Railway environment.
+- **Improved**: `upload_source` now disambiguates Railway's raw `404 Service instance not found` when the service exists in the project but only has service-instance bindings in other environments. Instead of returning the opaque upload failure, railguey reports `service_instance_environment_mismatch` with the token's environment and the environments where the service is actually bound.
+- **Fixed**: README no longer embeds private `raw.githubusercontent.com` image URLs, which rendered as broken images outside authenticated GitHub. The logo remains visible via the repo-local `logo.png`, and the workflow badge now points at the actual `ci.yml` workflow.
+- **Tests**: CLI command inventory now includes the v0.2.9 upload/bootstrap/delete verbs, and `upload_source` has regression coverage for the cross-environment 404 diagnostic.
+
 ## v0.2.10 — CLI exit-non-zero on tool error (was silently passing in CI)
 
 - **Fixed**: `_output()` now exits with code 1 when the tool result dict contains an `"error"` key. Previously, every CLI verb returned exit code 0 regardless of whether the underlying API call succeeded — meaning `gh actions` showing green for `railguey upload-source` deploys that actually 404'd. Caught 2026-05-02 in `data-daemon-v4-test`'s GHA workflow: `Upload failed (HTTP 404): Service instance not found` was emitted as JSON to stdout, but the GHA step succeeded, masking a real deploy failure (in this case, dd4t-bootstrapped-in-production-but-token-was-develop, but that's unrelated to the exit-code bug). Any pipeline that consumes railguey JSON via `--json` was unaffected; pipelines that just check exit codes were broken.

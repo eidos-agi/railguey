@@ -38,7 +38,6 @@ Then verify:
 pip install --index-url https://test.pypi.org/simple/ railguey
 railguey --version
 railguey --help
-railguey serve --help
 ```
 
 ### Step 3: Publish to PyPI
@@ -51,7 +50,6 @@ Verify:
 pip install railguey
 railguey --version
 uvx railguey --help
-uvx railguey serve
 ```
 
 ### Step 4: Lock API token to project
@@ -102,7 +100,7 @@ Even better: use PyPI's [Trusted Publishers](https://docs.pypi.org/trusted-publi
 - [ ] `pip install railguey` from TestPyPI works
 - [ ] PyPI upload works
 - [ ] `uvx railguey --help` works (proves it's installable without pre-install)
-- [ ] `uvx railguey serve` starts MCP server
+- [ ] `uvx railguey --help` shows the CLI command list
 - [ ] API token scoped to project only
 - [ ] GitHub Actions publish workflow added
 - [ ] Trusted Publishers configured (replaces API token)

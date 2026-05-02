@@ -128,7 +128,7 @@ def _show_and_destroy_qr(uri: str) -> str:
         except OSError:
             pass
 
-    # Run in background so the MCP call returns immediately
+    # Run in background so callers are not blocked while Preview is open.
     t = threading.Thread(target=_open_and_cleanup, daemon=True)
     t.start()
 

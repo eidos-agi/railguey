@@ -3,7 +3,6 @@
 Usage:
     railguey status /path/to/workspace
     railguey logs /path/to/workspace cerebro --lines 50
-    railguey serve  # starts the MCP server
 """
 
 import asyncio
@@ -237,16 +236,3 @@ def unlink_repo(workspace, service):
 def doctor(workspace):
     """Audit a workspace for Railway deployment best practices."""
     _output(_run(tools.doctor(workspace)))
-
-
-# ---------------------------------------------------------------------------
-# MCP server command
-# ---------------------------------------------------------------------------
-
-
-@main.command()
-def serve():
-    """Start the MCP server (for Claude Code, Cursor, etc.)."""
-    from railguey.mcp import mcp
-
-    mcp.run()

@@ -678,7 +678,8 @@ async def _update_domain_port(
             "error": (
                 "Updating a domain's targetPort requires a Bearer (account) token, "
                 "but no account is registered. Project tokens cannot execute this mutation. "
-                "Use railguey_account_add to register an account with access to this workspace."
+                "Register a Railway account token in ~/.railguey/accounts.json "
+                "with access to this workspace."
             )
         }
 
@@ -801,7 +802,7 @@ async def deployments(workspace: str, service: str, limit: int = 10) -> dict:
 
 async def rollback(workspace: str, service: str, deployment_id: str) -> dict:
     """Roll back a service to a specific previous deployment."""
-    _ = service  # kept for MCP API consistency; rollback targets deployment_id directly
+    _ = service  # rollback targets deployment_id directly
     token = _load_token(workspace)
     query = """
     mutation deploymentRollback($id: String!) {
@@ -928,7 +929,7 @@ async def deployment_logs(
 ) -> dict:
     """Get logs for a specific deployment by ID.
 
-    Use railguey_deployments to find deployment IDs, then this tool to
+    Use `railguey deployments` to find deployment IDs, then this function to
     inspect a specific one. Useful when multiple deployments (across
     environments or services) are interleaved.
     """
@@ -996,7 +997,7 @@ async def unlink_repo(workspace: str, service: str) -> dict:
         "service": service,
         "next_step": (
             "GitHub repo linking removed. Deploys will no longer auto-trigger on push. "
-            "Run railguey_doctor to set up token-based GitHub Actions CI/CD instead."
+            "Run `railguey doctor` to set up token-based GitHub Actions CI/CD instead."
         ),
     }
 
@@ -1081,7 +1082,7 @@ async def project_create(
     """
     if not team_id:
         return {
-            "error": "team_id is required. Use railguey_workspaces to list available "
+            "error": "team_id is required. Use list_workspaces() to list available "
             "teams, then pass the team ID. Railguey never creates projects "
             "without an explicit team to prevent accidental personal-account deploys."
         }
@@ -1302,6 +1303,79 @@ def _build_tarball(workspace_path: Path) -> bytes:
     return body
 
 
+async def _diagnose_service_instance_gap(
+    token: str,
+    project_id: str,
+    environment_id: str,
+    service_id: str,
+    service: str,
+) -> dict:
+    """Explain Railway's ambiguous 404 when a service lacks this env binding."""
+    query = """
+    query project($id: String!) {
+      project(id: $id) {
+        environments { edges { node { id name } } }
+        services {
+          edges {
+            node {
+              id
+              name
+              serviceInstances { edges { node { environmentId } } }
+            }
+          }
+        }
+      }
+    }
+    """
+    result = await _gql(token, query, {"id": project_id})
+    if "error" in result:
+        return {}
+
+    proj = result.get("project", {}) or {}
+    env_names = {
+        edge.get("node", {}).get("id"): edge.get("node", {}).get("name", "unknown")
+        for edge in proj.get("environments", {}).get("edges", [])
+    }
+
+    for edge in proj.get("services", {}).get("edges", []):
+        svc = edge.get("node", {}) or {}
+        if svc.get("id") != service_id:
+            continue
+
+        instance_env_ids = [
+            inst_edge.get("node", {}).get("environmentId")
+            for inst_edge in svc.get("serviceInstances", {}).get("edges", [])
+        ]
+        instance_env_ids = [env_id for env_id in instance_env_ids if env_id]
+        if environment_id in instance_env_ids or not instance_env_ids:
+            return {}
+
+        bindings = [
+            {"environmentId": env_id, "environmentName": env_names.get(env_id, env_id)}
+            for env_id in instance_env_ids
+        ]
+        target_name = env_names.get(environment_id, environment_id)
+        return {
+            "error": (
+                f"Service '{service}' exists in project but has no service instance "
+                f"in environment '{target_name}' ({environment_id}), which is the "
+                "environment resolved from this token. Existing service-instance "
+                f"bindings: {[b['environmentName'] for b in bindings]}. "
+                "Bootstrap the service in this environment, or use a token for an "
+                "environment where the service already has an instance."
+            ),
+            "diagnostic": "service_instance_environment_mismatch",
+            "service": service,
+            "serviceId": service_id,
+            "projectId": project_id,
+            "environmentId": environment_id,
+            "environmentName": target_name,
+            "serviceInstanceBindings": bindings,
+        }
+
+    return {}
+
+
 async def upload_source(
     workspace: str,
     service: str,
@@ -1390,6 +1464,15 @@ async def upload_source(
         err = resp.json().get("message", resp.text[:300])
     except Exception:
         err = resp.text[:300]
+    if resp.status_code == 404 and "Service instance not found" in err:
+        diagnosis = await _diagnose_service_instance_gap(
+            token, project_id, environment_id, service_id, service
+        )
+        if diagnosis:
+            diagnosis["railwayError"] = err
+            diagnosis["tarballBytes"] = len(body)
+            return diagnosis
+
     return {
         "error": f"Upload failed (HTTP {resp.status_code}): {err}",
         "service": service,
@@ -1695,7 +1778,8 @@ async def service_update(
             "error": (
                 "serviceInstanceUpdate requires a Bearer (account) token, but no account is registered. "
                 "Project tokens cannot execute this mutation. "
-                "Use railguey_account_add to register an account with access to this workspace."
+                "Register a Railway account token in ~/.railguey/accounts.json "
+                "with access to this workspace."
             )
         }
 

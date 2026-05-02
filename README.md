@@ -1,15 +1,17 @@
+# railguey
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/eidos-agi/railguey/main/logo.png" alt="railguey" width="500">
+  <img src="logo.png" alt="railguey" width="500">
 </p>
 
 <p align="center">
-  Project-scoped Railway MCP server.<br>
+  Project-scoped Railway CLI.<br>
   Reads <code>RAILWAY_TOKEN</code> from each project's <code>.env.local</code> — no <code>railway login</code> needed.
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/railguey/"><img src="https://img.shields.io/pypi/v/railguey" alt="PyPI"></a>
-  <a href="https://github.com/eidos-agi/railguey/actions/workflows/test.yml"><img src="https://github.com/eidos-agi/railguey/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/eidos-agi/railguey/actions/workflows/ci.yml"><img src="https://github.com/eidos-agi/railguey/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
   <a href="https://pypi.org/project/railguey/"><img src="https://img.shields.io/pypi/pyversions/railguey" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/eidos-agi/railguey" alt="License"></a>
 </p>
@@ -24,9 +26,14 @@ Railway's GitHub App is fast to set up: connect your repo, push to main, and you
 
 The GitHub App bundles five responsibilities into one opaque chain: watch for code changes, authenticate to GitHub, receive a webhook, clone the repo, build and deploy. When the chain works, it feels like magic. When it doesn't — and it has broken [four times in four months](WHY-RAILGUEY.md#the-incident-timeline) — there is no observability, no retry, and no notification. Your push goes in. Nothing comes out. You find out when a customer does.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/eidos-agi/railguey/main/docs/railway-github-app-problem.png" alt="Railway GitHub App: the fragile chain" width="600">
-</p>
+```text
+git push
+   |
+   v
+GitHub webhook -> Railway GitHub App -> clone/build/deploy
+   |                    |                     |
+   +-- missed event     +-- auth drift        +-- silent trigger failure
+```
 
 Every decision diamond in this diagram is a place where the chain can silently break. Missed webhooks, lost build triggers, GitHub App auth failures — all produce the same result: **nothing happens, and nobody tells you**.
 
@@ -36,13 +43,19 @@ This isn't a bug. It's an architectural choice. Railway chose to own the entire 
 
 railguey separates concerns. GitHub Actions watches your repo (GitHub watching GitHub — the thing it was built for). railguey handles the deploy via Railway's API using project-scoped tokens. Railway builds and runs your service (the thing *it* was built for). Each system does one job.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/eidos-agi/railguey/main/docs/railguey-solution.png" alt="railguey: token-based deploy pipeline" width="700">
-</p>
+```text
+git push
+   |
+   v
+GitHub Actions -> tests -> railguey -> Railway API -> build/deploy
+       |             |        |              |
+       +-- visible   +-- fail +-- nonzero    +-- deployment status
+```
 
 If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If the service is unhealthy, `railguey doctor` catches it. Every step is observable, retryable, and owned by the system best suited to do it.
 
 **Fast delivery and good engineering aren't opposites** — but Railway's GitHub App trades the second for the first. railguey gives you both.
+
 | Doc | What it covers |
 |-----|---------------|
 | **[WHY-NOT-RAILWAY-APP.md](WHY-NOT-RAILWAY-APP.md)** | The architectural argument — why coupling CI/CD triggering with deployment is a design flaw, not just a bug |
@@ -51,7 +64,7 @@ If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If
 
 ## When to use railguey
 
-- You manage Railway services from AI agents (Claude Code, Cursor, etc.) and want them to deploy, rollback, and read logs without `railway login`
+- You manage Railway services from agents, local shells, or CI and want reliable deploys, rollbacks, and logs without `railway login`
 - You run multiple Railway projects and want one auth pattern across local dev, CI/CD, and AI tooling
 - Deploy reliability matters — production services, client projects, anything where a silently missed deploy costs you
 - You're already using GitHub Actions and want Railway deploys in the same pipeline as your tests
@@ -59,13 +72,13 @@ If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If
 ## When NOT to use railguey
 
 - **Quick demos and hobby projects.** Railway's GitHub app is genuinely convenient for push-and-forget deploys. If you're prototyping and don't care about deploy reliability, the built-in integration is fine.
-- **You don't use an MCP client or CLI.** railguey includes both an MCP server and a CLI. But if you only deploy once in a while from the terminal, the Railway CLI with a project token is enough.
+- **You only deploy once in a while from the terminal.** If manual dashboard checks are fine, the Railway CLI with a project token is enough.
 - **You're happy with the dashboard.** If you deploy once a week and check status manually, railguey adds complexity you don't need.
 
 ## Known limitations
 
 - **All tools depend on Railway's Backboard GraphQL API**, which isn't officially documented. The schema could change without notice.
-- **No Railway CLI required.** All 21 tools use pure GraphQL with project-scoped tokens. The CLI backend module still exists for backward compatibility but is no longer used by any tool.
+- **No Railway CLI required.** The core deploy tools use Railway's GraphQL/API surfaces with project-scoped tokens. The legacy CLI backend has been removed.
 - **One token per project.** Project-scoped tokens can't query across projects. If you manage 10 projects, you need 10 `.env.local` files in 10 workspaces. This is by design (isolation), but it's more setup than a user-level login.
 
 ## Install
@@ -95,7 +108,7 @@ pip install -e .
 
 ## CLI usage
 
-`pip install railguey` gives you the `railguey` command with all 21 tools as subcommands:
+`pip install railguey` gives you the `railguey` command with the core deploy and diagnostics tools as subcommands:
 
 ```bash
 railguey status ~/repos/my-app
@@ -108,60 +121,6 @@ railguey service-info ~/repos/my-app cerebro
 ```
 
 Every command takes a `workspace` path — the directory containing `.env.local` with `RAILWAY_TOKEN`.
-
-## Configure Claude Code (MCP)
-
-The recommended setup uses the Claude Code CLI to register railguey as a user-level MCP server:
-
-```bash
-pip install railguey
-claude mcp add --scope user railguey -- railguey serve
-```
-
-This makes railguey available in every Claude Code session, across all projects. The `--scope user` flag writes to `~/.claude.json` so it persists globally.
-
-<details>
-<summary>Manual config (alternative)</summary>
-
-Add to `~/.claude.json` under `mcpServers`:
-
-```json
-{
-  "mcpServers": {
-    "railguey": {
-      "command": "railguey",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>From source (development)</summary>
-
-```bash
-git clone https://github.com/eidos-agi/railguey.git
-cd railguey
-pip install -e .
-claude mcp add --scope user railguey -- railguey serve
-```
-
-Or manually in `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "railguey": {
-      "command": "python3",
-      "args": ["-m", "railguey.mcp"]
-    }
-  }
-}
-```
-
-</details>
 
 ## First deploy of a fresh service
 
@@ -177,46 +136,41 @@ The tarball respects `.gitignore`, `.dockerignore`, and `.railwayignore` (90% of
 
 For subsequent deploys, use `railguey upload-source` (just upload — service already exists) or `railguey deploy` (redeploy from existing source).
 
-## Tools
+## Commands
 
-21 tools, all pure GraphQL. No Railway CLI required — just a project-scoped token.
+Core CLI commands, all token-based. No Railway CLI required.
 
-| Tool | What it does |
+| Command | What it does |
 |------|-------------|
-| `railguey_status` | Project overview — all services, deploy status, domains |
-| `railguey_services` | List services with IDs |
-| `railguey_logs` | Fetch recent deploy or build logs (with optional filter) |
-| `railguey_deploy` | Trigger a deploy from linked source |
-| `railguey_redeploy` | Redeploy latest deployment (rebuilds from source) |
-| `railguey_restart` | Restart latest deployment (no rebuild, fast) |
-| `railguey_variables` | List env vars for a service |
-| `railguey_variable_set` | Set an env var (triggers redeploy) |
-| `railguey_domain` | Generate a railway.app domain or add a custom domain |
-| `railguey_environment_create` | Create a new environment (staging, preview, etc.) |
-| `railguey_deployments` | Deployment history with IDs, statuses, timestamps, rollback eligibility |
-| `railguey_rollback` | Roll back to a specific deployment |
-| `railguey_service_info` | Full service config — build/start commands, healthcheck, region, replicas |
-| `railguey_http_logs` | HTTP request logs — status codes, latency, paths |
-| `railguey_deployment_logs` | Logs for a specific deployment by ID (deploy or build, with filter) |
-| `railguey_unlink_repo` | Disconnect a service from GitHub repo linking |
-| `railguey_service_create` | Create a service bound to the project token's environment |
-| `railguey_upload_source` | Tarball workspace + POST to Railway `/up` — deploy via project token |
-| `railguey_service_bootstrap` | One-call first deploy: `service_create` + `upload_source` |
-| `railguey_service_delete` | Delete a service from the Railway project (irreversible) |
+| `railguey status` | Project overview — all services, deploy status, domains |
+| `railguey services` | List services with IDs |
+| `railguey logs` | Fetch recent deploy or build logs (with optional filter) |
+| `railguey deploy` | Trigger a deploy from linked source |
+| `railguey redeploy` | Redeploy latest deployment (rebuilds from source) |
+| `railguey restart` | Restart latest deployment (no rebuild, fast) |
+| `railguey variables` | List env vars for a service |
+| `railguey variable-set` | Set an env var (triggers redeploy) |
+| `railguey domain` | Generate a railway.app domain or add a custom domain |
+| `railguey environment-create` | Create a new environment (staging, preview, etc.) |
+| `railguey deployments` | Deployment history with IDs, statuses, timestamps, rollback eligibility |
+| `railguey rollback` | Roll back to a specific deployment |
+| `railguey service-info` | Full service config — build/start commands, healthcheck, region, replicas |
+| `railguey http-logs` | HTTP request logs — status codes, latency, paths |
+| `railguey deployment-logs` | Logs for a specific deployment by ID (deploy or build, with filter) |
+| `railguey unlink-repo` | Disconnect a service from GitHub repo linking |
+| `railguey service-create` | Create a service bound to the project token's environment |
+| `railguey upload-source` | Tarball workspace + POST to Railway `/up` — deploy via project token |
+| `railguey service-bootstrap` | One-call first deploy: `service-create` + `upload-source` |
+| `railguey service-delete` | Delete a service from the Railway project (irreversible) |
+| `railguey doctor` | Audit a workspace for deployment best practices |
 
-### Coaching tools
-
-| Tool | What it does |
-|------|-------------|
-| `railguey_doctor` | Audit a workspace for deployment best practices (4-point check) |
-
-`railguey_doctor` checks:
+`railguey doctor` checks:
 1. `RAILWAY_TOKEN` exists in `.env.local`
 2. `.env.local` is in `.gitignore`
 3. GitHub Actions deploy workflow exists with token-based CI/CD
 4. No services linked to GitHub repos
 
-Every tool requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`.
+Every command requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`.
 
 ## Example
 
@@ -225,22 +179,13 @@ Every tool requires a `workspace` parameter — the absolute path to a project d
 railguey logs ~/repos/my-app web --lines 50
 ```
 
-**MCP (via AI agent):**
-```python
-railguey_logs(workspace="/Users/you/repos/my-app", service="web", lines=50)
-```
-
 **Python library:**
 ```python
 from railguey.lib import tools
 result = await tools.logs("/Users/you/repos/my-app", "web", lines=50)
 ```
 
-All three read `/Users/you/repos/my-app/.env.local`, extract the token, and run:
-
-```bash
-RAILWAY_TOKEN=<token> railway logs --service web --lines 50
-```
+Both paths read `/Users/you/repos/my-app/.env.local`, extract the token, resolve the Railway project/service, and fetch logs through Railway's API.
 
 ## The project-token pattern
 
@@ -249,7 +194,7 @@ Railway lets you create [project-scoped tokens](https://docs.railway.com/guides/
 | Context | How the token is used |
 |---------|----------------------|
 | **Local dev** | `.env.local` — `railway logs`, `railway up`, etc. |
-| **AI agents (railguey)** | Read from `.env.local` at the workspace path |
+| **Agents using railguey** | Call the CLI with a workspace path |
 | **GitHub Actions CI/CD** | Repository secret → `RAILWAY_TOKEN` env var |
 | **Any CI system** | Same — export the token, run `railway up` |
 

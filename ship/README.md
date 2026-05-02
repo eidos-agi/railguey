@@ -2,7 +2,7 @@
 
 > How to safely get code from working directory to published on PyPI.
 
-railguey is a Python package (MCP server) published to PyPI. There's no running service to deploy — shipping means: test, commit, push, and optionally tag a release.
+railguey is a Python CLI package published to PyPI. There's no running service to deploy — shipping means: test, commit, push, and optionally tag a release.
 
 ## Status
 
@@ -17,8 +17,8 @@ railguey is a Python package (MCP server) published to PyPI. There's no running 
 
 ### Steps
 1. **Editable install**: `pip install -e ".[dev]"` — verify package installs cleanly
-2. **Import check**: `python -c "from railguey import __version__, run; print(__version__)"` — catch import errors
-3. **Entry point check**: `timeout 2 railguey 2>/dev/null; echo "exit: $?"` — verify console script starts (exits 124 = timeout = good, it hung waiting for MCP input)
+2. **Import check**: `python -c "from railguey import __version__; print(__version__)"` — catch import errors
+3. **Entry point check**: `railguey --help` — verify console script starts
 4. Report: pass/fail for each
 
 ## Preflight
