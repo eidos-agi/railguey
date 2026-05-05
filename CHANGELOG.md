@@ -4,6 +4,8 @@
 
 - **Added**: 4 CLI verbs wrapping the existing volume tools — `railguey volume-create <workspace> <service> <mount-path>`, `railguey volumes <workspace>`, `railguey volume-delete <workspace> <volume-id>`, `railguey volume-resize <workspace> <volume-instance-id> <size-mb>`. The underlying `volume_create` / `volumes` / `volume_delete` / `volume_resize` functions in `lib/tools.py` were merged in v0.2.x via PR #3 but never exposed as click commands; the 0.3.0 "cli-only" pivot made wiring them a substrate gap. Now closed.
 - **Cleanup**: Retired the stale `fix/volume-tools-use-project-token` branch (forked from v0.2.7, predating v0.2.9). Its intent — volume tools should call `_load_project_token` not `_load_token` — already merged on main; verified locally for all 4 volume functions.
+- **Added**: `railguey bucket` CRUD commands: list, create, info, credentials, rename, and delete. Bucket create/rename/credential-reset use Railway account Bearer auth; environment deployment/deletion uses the project token's environment config patch.
+- **Live-verified**: Created `omnidata-bucket` in the `omnidata-cloud` Railway project (`iad`), read info and S3 credentials, then exercised create/rename/delete with a temporary smoke bucket.
 - **FOSS hygiene**: Updated the forge manifest to match the public repository, refreshed stale PyPI release instructions, and removed old `0.2.x` release-plan language.
 - **Docs**: Replaced public GitHub Actions examples that still installed the official Railway CLI with `pip install railguey` and `railguey upload-source`.
 - **Packaging docs**: README now uses a public absolute logo URL so the logo renders on PyPI as well as GitHub.

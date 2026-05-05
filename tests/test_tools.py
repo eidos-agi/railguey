@@ -27,6 +27,12 @@ from railguey.lib.tools import (
     unlink_repo,
     service_update,
     upload_source,
+    buckets,
+    bucket_create,
+    bucket_info,
+    bucket_credentials,
+    bucket_rename,
+    bucket_delete,
 )
 
 # ---------------------------------------------------------------------------
@@ -1171,6 +1177,225 @@ class TestServiceUpdate:
         assert fields["numReplicas"] == 3
         assert fields["restartPolicyType"] == "ON_FAILURE"
         assert fields["restartPolicyMaxRetries"] == 5
+
+
+# ===================================================================
+# buckets
+# ===================================================================
+
+
+BUCKET_TOPOLOGY = {
+    "project": {
+        "id": "proj-abc",
+        "name": "proj",
+        "buckets": {
+            "edges": [
+                {
+                    "node": {
+                        "id": "bucket-1",
+                        "name": "photos",
+                        "projectId": "proj-abc",
+                        "createdAt": "2026-05-01T00:00:00Z",
+                        "updatedAt": "2026-05-01T00:00:00Z",
+                    }
+                }
+            ]
+        },
+        "environments": {
+            "edges": [
+                {
+                    "node": {
+                        "id": "env-xyz",
+                        "name": "production",
+                        "unmergedChangesCount": 0,
+                        "config": {
+                            "buckets": {
+                                "bucket-1": {
+                                    "region": "iad",
+                                    "isCreated": True,
+                                }
+                            }
+                        },
+                    }
+                }
+            ]
+        },
+    }
+}
+
+
+class TestBuckets:
+    async def test_list_buckets(self, workspace_with_token):
+        with _patch_project(), _patch_gql(BUCKET_TOPOLOGY):
+            result = await buckets(str(workspace_with_token))
+
+        assert result["count"] == 1
+        assert result["buckets"][0]["name"] == "photos"
+        assert result["buckets"][0]["region"] == "iad"
+
+    async def test_create_bucket_commits_environment_patch(self, workspace_with_token):
+        with (
+            _patch_project(),
+            _patch_user_token(),
+            _patch_gql(
+                {"environment": {"id": "env-xyz", "unmergedChangesCount": 0}},
+                {"environmentPatchCommit": True},
+            ) as mock_gql,
+            _patch_gql_bearer(
+                {
+                    "bucketCreate": {
+                        "id": "bucket-2",
+                        "name": "omnidata",
+                        "projectId": "proj-abc",
+                    }
+                }
+            ),
+        ):
+            result = await bucket_create(str(workspace_with_token), "omnidata", "iad")
+
+        assert result["created"] is True
+        assert result["bucketId"] == "bucket-2"
+        assert result["region"] == "iad"
+        assert result["committed"] is True
+        patch_vars = mock_gql.call_args_list[1].args[2]
+        assert patch_vars["patch"]["buckets"]["bucket-2"] == {
+            "region": "iad",
+            "isCreated": True,
+        }
+
+    async def test_create_bucket_stages_when_environment_has_changes(
+        self, workspace_with_token
+    ):
+        with (
+            _patch_project(),
+            _patch_user_token(),
+            _patch_gql(
+                {"environment": {"id": "env-xyz", "unmergedChangesCount": 2}},
+                {"environmentStageChanges": {"id": "change-1", "status": "STAGED"}},
+            ) as mock_gql,
+            _patch_gql_bearer(
+                {
+                    "bucketCreate": {
+                        "id": "bucket-2",
+                        "name": "omnidata",
+                        "projectId": "proj-abc",
+                    }
+                }
+            ),
+        ):
+            result = await bucket_create(str(workspace_with_token), "omnidata", "sjc")
+
+        assert result["staged"] is True
+        stage_vars = mock_gql.call_args_list[1].args[2]
+        assert stage_vars["merge"] is True
+        assert stage_vars["input"]["buckets"]["bucket-2"]["region"] == "sjc"
+
+    async def test_create_rejects_invalid_region(self, workspace_with_token):
+        result = await bucket_create(str(workspace_with_token), "bad", "dfw")
+        assert "Invalid bucket region" in result["error"]
+
+    async def test_info_merges_topology_and_details(self, workspace_with_token):
+        with (
+            _patch_project(),
+            _patch_gql(
+                BUCKET_TOPOLOGY,
+                {"bucketInstanceDetails": {"sizeBytes": "1024", "objectCount": "3"}},
+            ),
+        ):
+            result = await bucket_info(str(workspace_with_token), "photos")
+
+        assert result["id"] == "bucket-1"
+        assert result["sizeBytes"] == 1024
+        assert result["objectCount"] == 3
+
+    async def test_credentials_returns_s3_env_shape(self, workspace_with_token):
+        with (
+            _patch_project(),
+            _patch_gql(
+                BUCKET_TOPOLOGY,
+                {
+                    "bucketS3Credentials": [
+                        {
+                            "accessKeyId": "access",
+                            "secretAccessKey": "secret",
+                            "endpoint": "https://storage.railway.app",
+                            "bucketName": "photos-hash",
+                            "region": "auto",
+                            "urlStyle": "virtual-hosted",
+                        }
+                    ]
+                },
+            ),
+        ):
+            result = await bucket_credentials(str(workspace_with_token), "photos")
+
+        assert result["credentials"]["AWS_S3_BUCKET_NAME"] == "photos-hash"
+        assert result["credentials"]["AWS_SECRET_ACCESS_KEY"] == "secret"
+
+    async def test_credentials_reset_uses_mutation(self, workspace_with_token):
+        with (
+            _patch_project(),
+            _patch_user_token(),
+            _patch_gql(
+                BUCKET_TOPOLOGY,
+            ),
+            _patch_gql_bearer(
+                {
+                    "bucketCredentialsReset": {
+                        "accessKeyId": "access2",
+                        "secretAccessKey": "secret2",
+                        "endpoint": "https://storage.railway.app",
+                        "bucketName": "photos-hash",
+                        "region": "auto",
+                        "urlStyle": "virtual-hosted",
+                    }
+                }
+            ) as mock_bearer,
+        ):
+            result = await bucket_credentials(
+                str(workspace_with_token), "photos", reset=True
+            )
+
+        assert result["reset"] is True
+        assert "bucketCredentialsReset" in mock_bearer.call_args.args[1]
+
+    async def test_rename_bucket(self, workspace_with_token):
+        with (
+            _patch_project(),
+            _patch_user_token(),
+            _patch_gql(
+                BUCKET_TOPOLOGY,
+            ),
+            _patch_gql_bearer(
+                {
+                    "bucketUpdate": {
+                        "id": "bucket-1",
+                        "name": "archive",
+                        "projectId": "proj-abc",
+                    }
+                }
+            ),
+        ):
+            result = await bucket_rename(str(workspace_with_token), "photos", "archive")
+
+        assert result["renamed"] is True
+        assert result["oldName"] == "photos"
+        assert result["bucketName"] == "archive"
+
+    async def test_delete_bucket_patches_environment(self, workspace_with_token):
+        with (
+            _patch_project(),
+            _patch_gql(
+                BUCKET_TOPOLOGY,
+                {"environment": {"id": "env-xyz", "unmergedChangesCount": 0}},
+                {"environmentPatchCommit": True},
+            ) as mock_gql,
+        ):
+            result = await bucket_delete(str(workspace_with_token), "photos")
+
+        assert result["deleted"] is True
+        patch_vars = mock_gql.call_args_list[2].args[2]
+        assert patch_vars["patch"]["buckets"]["bucket-1"] == {"isDeleted": True}
 
 
 # ===================================================================

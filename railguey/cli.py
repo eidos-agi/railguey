@@ -274,3 +274,69 @@ def unlink_repo(workspace, service):
 def doctor(workspace):
     """Audit a workspace for Railway deployment best practices."""
     _output(_run(tools.doctor(workspace)))
+
+
+@main.group()
+def bucket():
+    """Manage Railway storage buckets."""
+
+
+@bucket.command("list")
+@click.argument("workspace")
+def bucket_list(workspace):
+    """List buckets deployed in the project token's environment."""
+    _output(_run(tools.buckets(workspace)))
+
+
+@bucket.command("create")
+@click.argument("workspace")
+@click.argument("name", required=False)
+@click.option(
+    "--region",
+    default="sjc",
+    type=click.Choice(["sjc", "iad", "ams", "sin"]),
+    help="Bucket region.",
+)
+def bucket_create(workspace, name, region):
+    """Create a bucket and deploy it to the project token's environment."""
+    _output(_run(tools.bucket_create(workspace, name, region)))
+
+
+@bucket.command("info")
+@click.argument("workspace")
+@click.argument("bucket_name")
+def bucket_info(workspace, bucket_name):
+    """Show bucket details."""
+    _output(_run(tools.bucket_info(workspace, bucket_name)))
+
+
+@bucket.command("credentials")
+@click.argument("workspace")
+@click.argument("bucket_name")
+@click.option("--reset", is_flag=True, help="Reset S3 credentials before returning them.")
+@click.option("--yes", is_flag=True, help="Confirm credential reset.")
+def bucket_credentials(workspace, bucket_name, reset, yes):
+    """Show or reset S3-compatible bucket credentials."""
+    if reset and not yes:
+        _output({"error": "Credential reset requires --yes."})
+    _output(_run(tools.bucket_credentials(workspace, bucket_name, reset)))
+
+
+@bucket.command("rename")
+@click.argument("workspace")
+@click.argument("bucket_name")
+@click.argument("name")
+def bucket_rename(workspace, bucket_name, name):
+    """Rename a bucket display name."""
+    _output(_run(tools.bucket_rename(workspace, bucket_name, name)))
+
+
+@bucket.command("delete")
+@click.argument("workspace")
+@click.argument("bucket_name")
+@click.option("--yes", is_flag=True, help="Confirm bucket deletion.")
+def bucket_delete(workspace, bucket_name, yes):
+    """Delete a bucket from the project token's environment."""
+    if not yes:
+        _output({"error": "Bucket deletion requires --yes."})
+    _output(_run(tools.bucket_delete(workspace, bucket_name)))

@@ -162,6 +162,12 @@ Core CLI commands, all token-based. No Railway CLI required.
 | `railguey upload-source` | Tarball workspace + POST to Railway `/up` — deploy via project token |
 | `railguey service-bootstrap` | One-call first deploy: `service-create` + `upload-source` |
 | `railguey service-delete` | Delete a service from the Railway project (irreversible) |
+| `railguey bucket list` | List buckets deployed in the project token's environment |
+| `railguey bucket create` | Create a bucket and deploy it to an environment region |
+| `railguey bucket info` | Show bucket size/object-count details |
+| `railguey bucket credentials` | Show or reset S3-compatible bucket credentials |
+| `railguey bucket rename` | Rename a bucket display name |
+| `railguey bucket delete` | Delete a bucket from the environment (requires `--yes`) |
 | `railguey doctor` | Audit a workspace for deployment best practices |
 
 `railguey doctor` checks:

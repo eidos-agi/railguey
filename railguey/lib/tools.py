@@ -1987,6 +1987,475 @@ async def volume_resize(
     return {"resized": True, "volumeInstanceId": volume_instance_id, "sizeMB": size_mb}
 
 
+BUCKET_REGIONS = {
+    "sjc": "US West, California",
+    "iad": "US East, Virginia",
+    "ams": "EU West, Amsterdam",
+    "sin": "Asia Pacific, Singapore",
+}
+
+
+async def buckets(workspace: str) -> dict:
+    """List Railway buckets deployed in the project token's environment."""
+    token = _load_project_token(workspace)
+    resolved = await _resolve_project(token)
+    if "error" in resolved:
+        return resolved
+    project_id = resolved.get("projectId")
+    environment_id = resolved.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    topology = await _bucket_topology(token, project_id, environment_id)
+    if "error" in topology:
+        return topology
+    return {"count": len(topology["buckets"]), "buckets": topology["buckets"]}
+
+
+async def bucket_create(
+    workspace: str,
+    name: str | None = None,
+    region: str = "sjc",
+) -> dict:
+    """Create a Railway bucket and deploy it to the token's environment."""
+    if region not in BUCKET_REGIONS:
+        return {
+            "error": f"Invalid bucket region '{region}'",
+            "validRegions": sorted(BUCKET_REGIONS),
+        }
+
+    token = _load_project_token(workspace)
+    resolved = await _resolve_project(token)
+    if "error" in resolved:
+        return resolved
+    project_id = resolved.get("projectId")
+    environment_id = resolved.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    query = """
+    mutation bucketCreate($input: BucketCreateInput!) {
+      bucketCreate(input: $input) { id name projectId createdAt updatedAt }
+    }
+    """
+    input_data = {"projectId": project_id}
+    if name:
+        input_data["name"] = name
+    try:
+        account_token = _load_user_token()
+    except ValueError as exc:
+        return {
+            "error": "bucket_create requires a Bearer (account) token",
+            "details": str(exc),
+        }
+    result = await _gql_bearer(account_token, query, {"input": input_data})
+    if "error" in result:
+        return result
+
+    bucket = result.get("bucketCreate", {})
+    bucket_id = bucket.get("id")
+    bucket_name = bucket.get("name")
+    if not bucket_id:
+        return {"error": "bucketCreate did not return a bucket id", "response": result}
+
+    patch = {
+        "buckets": {
+            bucket_id: {
+                "region": region,
+                "isCreated": True,
+            }
+        }
+    }
+    patch_result = await _apply_environment_patch(
+        token,
+        environment_id,
+        patch,
+        commit_message=f"Create bucket {bucket_name or bucket_id}",
+    )
+    if "error" in patch_result:
+        return {
+            "error": "Bucket was created, but environment deployment failed",
+            "bucket": bucket,
+            "details": patch_result,
+        }
+
+    return {
+        "created": True,
+        "bucketId": bucket_id,
+        "bucketName": bucket_name,
+        "projectId": bucket.get("projectId", project_id),
+        "region": region,
+        **patch_result,
+    }
+
+
+async def bucket_info(workspace: str, bucket: str) -> dict:
+    """Show details for a bucket deployed in the token's environment."""
+    token = _load_project_token(workspace)
+    resolved = await _resolve_project(token)
+    if "error" in resolved:
+        return resolved
+    project_id = resolved.get("projectId")
+    environment_id = resolved.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    found = await _resolve_bucket(token, project_id, environment_id, bucket)
+    if "error" in found:
+        return found
+
+    query = """
+    query bucketInstanceDetails($bucketId: String!, $environmentId: String!) {
+      bucketInstanceDetails(bucketId: $bucketId, environmentId: $environmentId) {
+        sizeBytes
+        objectCount
+      }
+    }
+    """
+    result = await _gql(
+        token,
+        query,
+        {"bucketId": found["id"], "environmentId": environment_id},
+    )
+    if "error" in result:
+        return result
+    details = result.get("bucketInstanceDetails") or {}
+    return {
+        **found,
+        "environmentId": environment_id,
+        "sizeBytes": int(details.get("sizeBytes") or 0),
+        "objectCount": int(details.get("objectCount") or 0),
+    }
+
+
+async def bucket_credentials(
+    workspace: str,
+    bucket: str,
+    reset: bool = False,
+) -> dict:
+    """Fetch or reset S3-compatible credentials for a Railway bucket."""
+    token = _load_project_token(workspace)
+    resolved = await _resolve_project(token)
+    if "error" in resolved:
+        return resolved
+    project_id = resolved.get("projectId")
+    environment_id = resolved.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    found = await _resolve_bucket(token, project_id, environment_id, bucket)
+    if "error" in found:
+        return found
+
+    if reset:
+        query = """
+        mutation bucketCredentialsReset($projectId: String!, $environmentId: String!, $bucketId: String!) {
+          bucketCredentialsReset(projectId: $projectId, environmentId: $environmentId, bucketId: $bucketId) {
+            accessKeyId
+            secretAccessKey
+            endpoint
+            bucketName
+            region
+            urlStyle
+          }
+        }
+        """
+        field = "bucketCredentialsReset"
+    else:
+        query = """
+        query bucketS3Credentials($projectId: String!, $environmentId: String!, $bucketId: String!) {
+          bucketS3Credentials(projectId: $projectId, environmentId: $environmentId, bucketId: $bucketId) {
+            accessKeyId
+            secretAccessKey
+            endpoint
+            bucketName
+            region
+            urlStyle
+          }
+        }
+        """
+        field = "bucketS3Credentials"
+    variables = {
+        "projectId": project_id,
+        "environmentId": environment_id,
+        "bucketId": found["id"],
+    }
+    if reset:
+        try:
+            account_token = _load_user_token()
+        except ValueError as exc:
+            return {
+                "error": "bucket_credentials reset requires a Bearer (account) token",
+                "details": str(exc),
+            }
+        result = await _gql_bearer(
+            account_token,
+            query,
+            variables,
+        )
+    else:
+        result = await _gql(token, query, variables)
+    if "error" in result:
+        return result
+
+    raw_credentials = result.get(field)
+    if isinstance(raw_credentials, list):
+        if len(raw_credentials) != 1:
+            return {
+                "error": "Expected exactly one S3 credential set",
+                "count": len(raw_credentials),
+            }
+        credentials = raw_credentials[0]
+    else:
+        credentials = raw_credentials or {}
+
+    return {
+        "bucketId": found["id"],
+        "bucketName": found["name"],
+        "reset": reset,
+        "credentials": {
+            "AWS_S3_ENDPOINT": credentials.get("endpoint", ""),
+            "AWS_ACCESS_KEY_ID": credentials.get("accessKeyId", ""),
+            "AWS_SECRET_ACCESS_KEY": credentials.get("secretAccessKey", ""),
+            "AWS_S3_BUCKET_NAME": credentials.get("bucketName", ""),
+            "AWS_REGION": credentials.get("region", ""),
+            "AWS_S3_URL_STYLE": credentials.get("urlStyle", ""),
+        },
+    }
+
+
+async def bucket_rename(workspace: str, bucket: str, name: str) -> dict:
+    """Rename a Railway bucket display name."""
+    token = _load_project_token(workspace)
+    resolved = await _resolve_project(token)
+    if "error" in resolved:
+        return resolved
+    project_id = resolved.get("projectId")
+    environment_id = resolved.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    found = await _resolve_bucket(token, project_id, environment_id, bucket)
+    if "error" in found:
+        return found
+
+    query = """
+    mutation bucketUpdate($id: String!, $input: BucketUpdateInput!) {
+      bucketUpdate(id: $id, input: $input) { id name projectId updatedAt }
+    }
+    """
+    try:
+        account_token = _load_user_token()
+    except ValueError as exc:
+        return {
+            "error": "bucket_rename requires a Bearer (account) token",
+            "details": str(exc),
+        }
+    result = await _gql_bearer(
+        account_token,
+        query,
+        {"id": found["id"], "input": {"name": name}},
+    )
+    if "error" in result:
+        return result
+    updated = result.get("bucketUpdate", {})
+    return {
+        "renamed": True,
+        "bucketId": updated.get("id", found["id"]),
+        "oldName": found["name"],
+        "bucketName": updated.get("name", name),
+        "projectId": updated.get("projectId", project_id),
+    }
+
+
+async def bucket_delete(workspace: str, bucket: str) -> dict:
+    """Delete a Railway bucket from the token's environment via config patch."""
+    token = _load_project_token(workspace)
+    resolved = await _resolve_project(token)
+    if "error" in resolved:
+        return resolved
+    project_id = resolved.get("projectId")
+    environment_id = resolved.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    found = await _resolve_bucket(token, project_id, environment_id, bucket)
+    if "error" in found:
+        return found
+
+    patch = {"buckets": {found["id"]: {"isDeleted": True}}}
+    patch_result = await _apply_environment_patch(
+        token,
+        environment_id,
+        patch,
+        commit_message=f"Delete bucket {found['name']}",
+    )
+    if "error" in patch_result:
+        return patch_result
+    return {
+        "deleted": True,
+        "bucketId": found["id"],
+        "bucketName": found["name"],
+        **patch_result,
+    }
+
+
+async def _bucket_topology(token: str, project_id: str, environment_id: str) -> dict:
+    query = """
+    query project($id: String!) {
+      project(id: $id) {
+        id
+        name
+        buckets {
+          edges {
+            node {
+              id
+              name
+              createdAt
+              updatedAt
+              projectId
+            }
+          }
+        }
+        environments {
+          edges {
+            node {
+              id
+              name
+              unmergedChangesCount
+              config
+            }
+          }
+        }
+      }
+    }
+    """
+    result = await _gql(token, query, {"id": project_id})
+    if "error" in result:
+        return result
+
+    project = result.get("project", {})
+    project_buckets = {
+        edge.get("node", {}).get("id"): edge.get("node", {})
+        for edge in project.get("buckets", {}).get("edges", [])
+        if edge.get("node", {}).get("id")
+    }
+    environment = None
+    for edge in project.get("environments", {}).get("edges", []):
+        node = edge.get("node", {})
+        if node.get("id") == environment_id:
+            environment = node
+            break
+    if not environment:
+        return {"error": f"Environment '{environment_id}' not found in project"}
+
+    env_buckets = (environment.get("config") or {}).get("buckets") or {}
+    out = []
+    for bucket_id, config in env_buckets.items():
+        if config.get("isDeleted"):
+            continue
+        bucket = project_buckets.get(bucket_id, {"id": bucket_id, "name": bucket_id})
+        out.append(
+            {
+                "id": bucket_id,
+                "name": bucket.get("name", bucket_id),
+                "projectId": bucket.get("projectId", project_id),
+                "environmentId": environment_id,
+                "environmentName": environment.get("name", ""),
+                "region": config.get("region", ""),
+                "createdAt": bucket.get("createdAt", ""),
+                "updatedAt": bucket.get("updatedAt", ""),
+            }
+        )
+    out.sort(key=lambda item: item["name"].lower())
+    return {
+        "projectId": project_id,
+        "environmentId": environment_id,
+        "unmergedChangesCount": environment.get("unmergedChangesCount") or 0,
+        "buckets": out,
+        "projectBuckets": list(project_buckets.values()),
+    }
+
+
+async def _resolve_bucket(
+    token: str,
+    project_id: str,
+    environment_id: str,
+    bucket: str,
+) -> dict:
+    topology = await _bucket_topology(token, project_id, environment_id)
+    if "error" in topology:
+        return topology
+    for candidate in topology["buckets"]:
+        if candidate["id"].lower() == bucket.lower() or candidate["name"].lower() == bucket.lower():
+            return candidate
+    for candidate in topology["projectBuckets"]:
+        if candidate.get("id", "").lower() == bucket.lower() or candidate.get("name", "").lower() == bucket.lower():
+            return {
+                "error": f"Bucket '{bucket}' exists in the project but is not deployed in this environment",
+                "bucketId": candidate.get("id", ""),
+                "environmentId": environment_id,
+            }
+    return {"error": f"Bucket '{bucket}' not found"}
+
+
+async def _apply_environment_patch(
+    token: str,
+    environment_id: str,
+    patch: dict,
+    commit_message: str | None = None,
+) -> dict:
+    query = """
+    query environment($id: String!) {
+      environment(id: $id) { id unmergedChangesCount }
+    }
+    """
+    current = await _gql(token, query, {"id": environment_id})
+    if "error" in current:
+        return current
+    unmerged = (current.get("environment") or {}).get("unmergedChangesCount") or 0
+
+    if unmerged:
+        mutation = """
+        mutation environmentStageChanges($environmentId: String!, $input: EnvironmentConfig!, $merge: Boolean) {
+          environmentStageChanges(environmentId: $environmentId, input: $input, merge: $merge) {
+            id
+            status
+          }
+        }
+        """
+        result = await _gql(
+            token,
+            mutation,
+            {"environmentId": environment_id, "input": patch, "merge": True},
+        )
+        if "error" in result:
+            return result
+        return {"staged": True, "committed": False}
+
+    mutation = """
+    mutation environmentPatchCommit($environmentId: String!, $patch: EnvironmentConfig!, $commitMessage: String) {
+      environmentPatchCommit(
+        environmentId: $environmentId
+        patch: $patch
+        commitMessage: $commitMessage
+      )
+    }
+    """
+    result = await _gql(
+        token,
+        mutation,
+        {
+            "environmentId": environment_id,
+            "patch": patch,
+            "commitMessage": commit_message,
+        },
+    )
+    if "error" in result:
+        return result
+    return {"staged": False, "committed": True}
+
+
 __all__ = [
     "status",
     "logs",
@@ -2019,4 +2488,10 @@ __all__ = [
     "volumes",
     "volume_delete",
     "volume_resize",
+    "buckets",
+    "bucket_create",
+    "bucket_info",
+    "bucket_credentials",
+    "bucket_rename",
+    "bucket_delete",
 ]
