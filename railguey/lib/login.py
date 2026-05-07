@@ -19,12 +19,16 @@ Design notes:
 
 from __future__ import annotations
 
+import asyncio
 import getpass
 import os
 import re
 import subprocess
 import webbrowser
 from pathlib import Path
+
+from railguey.lib import popup
+from railguey.lib.graphql import _resolve_project_metadata
 
 RAILWAY_TOKEN_PAGE = "https://railway.app/account/tokens"
 PROJECT_TOKEN_DOC = "https://docs.railway.com/reference/project#tokens"
@@ -127,28 +131,82 @@ def _push_to_github_secret(repo: str, token: str) -> dict:
     return {"ok": True, "repo": repo}
 
 
+def _detect_github_repo(workspace: Path) -> str | None:
+    """Try to infer 'owner/repo' from the workspace's git origin URL.
+
+    Returns None if no git origin is configured, the URL doesn't match
+    a recognized GitHub form, or git isn't installed.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(workspace), "config", "--get", "remote.origin.url"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    url = result.stdout.strip()
+    # SSH form: git@github.com:owner/repo.git
+    m = re.match(r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?$", url)
+    if m:
+        return m.group(1)
+    # HTTPS form: https://github.com/owner/repo(.git)?
+    m = re.match(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?$", url)
+    if m:
+        return m.group(1)
+    return None
+
+
 def login(
     workspace: str,
     open_browser: bool = True,
     token: str | None = None,
     github_repo: str | None = None,
+    use_popup: bool = True,
+    skip_validation: bool = False,
 ) -> dict:
     """Bootstrap RAILWAY_TOKEN for a workspace.
+
+    Default flow (interactive human use):
+      1. Open the Railway tokens page in the user's default browser.
+      2. Show a popup (Tk; falls back to terminal if Tk unavailable)
+         with fields for the token, an editable token name, and an
+         optional GitHub repo to also push the secret to.
+      3. Validate the token by introspecting the project metadata
+         from Railway's GraphQL API.
+      4. Show a second popup confirming project name, project ID,
+         environment ID, team, and the local + GitHub destinations.
+      5. On confirm, write to .env.local with 0600 perms, patch
+         .gitignore, and (optionally) push to GitHub Actions.
+
+    Headless flow (CI / scripts):
+      Pass token=<value>, optionally github_repo=<owner/repo>.
+      use_popup=False also forces the terminal flow.
 
     Args:
         workspace: path to the project directory that will host .env.local.
         open_browser: if True (default), open the Railway tokens page so
             the user can mint a project token. Set False for headless use.
         token: optional pre-supplied token. If None (the secure default),
-            prompts via getpass. If provided, used directly — this exists
-            for CI/scripted callers and skips the prompt.
+            prompts via popup or terminal.
         github_repo: optional "owner/repo" string. If set, also pushes
             the token to that repo's Actions secrets via `gh secret set`.
+            If None, railguey tries to auto-detect from git origin and
+            offers it in the popup as the default suggestion.
+        use_popup: if True (default), use the GUI popup flow when
+            available. Set False to force terminal-only.
+        skip_validation: if True, skip the Railway API round-trip used
+            to fetch project metadata. Useful in tests and offline use.
 
     Returns:
         Result dict with keys: workspace, env_file, gitignore_updated,
-        github_secret (if applicable). Includes "error" on failure
-        (CLI's _output() exits non-zero on that key).
+        token_name, project (metadata), github_secret (if applicable).
+        Includes "error" on failure (CLI's _output() exits non-zero
+        on that key).
     """
     ws = Path(workspace).expanduser().resolve()
     if not ws.is_dir():
@@ -158,21 +216,66 @@ def login(
         try:
             webbrowser.open(RAILWAY_TOKEN_PAGE)
         except webbrowser.Error:
-            pass  # user can navigate manually
+            pass
+
+    detected_repo = _detect_github_repo(ws)
+    suggested_repo = github_repo or detected_repo
+    token_name = "gha-deploy"
 
     if token is None:
-        # Masked input — never echoed to terminal, never in shell history
-        token = getpass.getpass(
-            f"Paste your Railway project token (hidden, see {PROJECT_TOKEN_DOC}): "
-        ).strip()
-
-    if not token:
-        return {"error": "No token provided."}
+        if use_popup:
+            prompt = popup.prompt_for_token(
+                railway_token_url=RAILWAY_TOKEN_PAGE,
+                default_token_name=token_name,
+                suggested_github_repo=suggested_repo,
+            )
+        else:
+            prompt = popup._terminal_prompt_for_token(
+                railway_token_url=RAILWAY_TOKEN_PAGE,
+                default_token_name=token_name,
+                suggested_github_repo=suggested_repo,
+            )
+        if prompt.cancelled or not prompt.token:
+            return {"error": "Cancelled — no token saved."}
+        token = prompt.token
+        token_name = prompt.token_name
+        if prompt.push_to_github and prompt.github_repo:
+            github_repo = prompt.github_repo
+        elif not prompt.push_to_github:
+            github_repo = None
 
     try:
         _validate_token(token)
     except ValueError as e:
         return {"error": str(e)}
+
+    project_meta: dict = {}
+    if not skip_validation:
+        try:
+            project_meta = asyncio.run(_resolve_project_metadata(token))
+        except Exception as e:
+            project_meta = {"error": f"metadata lookup failed: {e}"}
+        if "error" in project_meta:
+            # Don't write a token we couldn't validate against Railway —
+            # the whole point of confirmation is to catch bad pastes.
+            return {
+                "error": (
+                    f"Token failed to validate against Railway: "
+                    f"{project_meta.get('error')}. Nothing written."
+                )
+            }
+
+    if use_popup and not skip_validation and project_meta:
+        confirm = popup.confirm_save(
+            project_name=project_meta.get("projectName") or "(unknown)",
+            project_id=project_meta.get("projectId") or "(unknown)",
+            environment_id=project_meta.get("environmentId") or "(unknown)",
+            team_name=project_meta.get("teamName"),
+            env_file_path=str(ws / ".env.local"),
+            github_repo=github_repo,
+        )
+        if not confirm.confirmed:
+            return {"error": "Cancelled at confirmation step. Nothing written."}
 
     env_file = _write_token(ws, token)
     gitignore_updated = _ensure_gitignore(ws)
@@ -181,13 +284,11 @@ def login(
         "workspace": str(ws),
         "env_file": str(env_file),
         "gitignore_updated": gitignore_updated,
+        "token_name": token_name,
+        "project": project_meta if project_meta else None,
     }
 
     if github_repo:
         result["github_secret"] = _push_to_github_secret(github_repo, token)
-        if not result["github_secret"].get("ok"):
-            # Don't propagate as top-level error — the local write succeeded.
-            # Caller can decide whether to retry the gh push.
-            pass
 
     return result

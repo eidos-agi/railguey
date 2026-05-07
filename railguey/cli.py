@@ -54,39 +54,65 @@ def main():
     help="Do not open the Railway tokens page automatically (for headless / CI use).",
 )
 @click.option(
+    "--no-popup",
+    is_flag=True,
+    help="Skip the GUI popup; use the terminal flow even when Tk is available.",
+)
+@click.option(
     "--token",
     default=None,
-    help="Pre-supplied token (skips the masked prompt). For CI / scripted use only.",
+    help="Pre-supplied token (skips the popup and validation). For CI / scripted use only.",
 )
 @click.option(
     "--gh-secret",
     "github_repo",
     default=None,
     metavar="OWNER/REPO",
-    help="After writing locally, also set the RAILWAY_TOKEN secret on this GitHub repo via `gh secret set`.",
+    help="Override the auto-detected GitHub repo for the optional Actions-secret push.",
 )
-def login(workspace, no_browser, token, github_repo):
+@click.option(
+    "--skip-validation",
+    is_flag=True,
+    help="Skip the Railway API round-trip used to fetch + confirm project metadata.",
+)
+def login(workspace, no_browser, no_popup, token, github_repo, skip_validation):
     """Bootstrap RAILWAY_TOKEN into WORKSPACE/.env.local.
 
-    Opens the Railway tokens page in your browser, prompts for the
-    token via masked input (never appears in terminal or shell history),
-    writes it to .env.local with 0600 permissions, and patches
-    .gitignore so it can't be committed accidentally.
+    Default flow (interactive):
+      1. Opens the Railway tokens page in your default browser.
+      2. Shows an OS-agnostic Tk popup with editable fields:
+         - Token (masked input, never echoed)
+         - Token name (defaults to "gha-deploy", change as you like)
+         - Optional GitHub repo to also push the Actions secret to
+           (auto-detected from your git origin)
+      3. Validates the token by introspecting the project via Railway
+         GraphQL — a bad paste fails before anything is written.
+      4. Shows a second popup confirming the project name, project ID,
+         environment ID, team name, and the destinations about to be
+         written. Click Save to commit, Cancel to abort.
 
-    Optionally pushes the token to a GitHub Actions repo secret with
-    `--gh-secret OWNER/REPO`. The token is piped to `gh` via stdin —
-    not passed on the command line — so it never appears in `ps` output.
+    On systems without Tk (rare; minimal Docker images, headless CI)
+    the popup falls back to a terminal-based prompt with the same
+    semantics.
+
+    The token is piped to `gh secret set` via stdin if you opted into
+    the GitHub push — never passed on the command line, so it cannot
+    appear in `ps` output or any process inspection.
 
     Examples:
         railguey login .
-        railguey login /path/to/repo --gh-secret jetta-operating/labs
-        railguey login . --no-browser --token "$RAILWAY_TOKEN"  # CI
+        railguey login /path/to/repo
+        railguey login . --no-popup                      # terminal-only
+        railguey login . --no-browser --token "$X"       # CI / scripted
+        railguey login . --skip-validation               # offline / private network
     """
     result = login_lib.login(
         workspace=workspace,
         open_browser=not no_browser,
         token=token,
         github_repo=github_repo,
+        use_popup=not no_popup,
+        skip_validation=skip_validation,
     )
     _output(result)
 

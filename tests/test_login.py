@@ -96,6 +96,7 @@ class TestLoginIntegration:
             workspace=str(workspace),
             open_browser=False,
             token=VALID_TOKEN,
+            skip_validation=True,
         )
         assert "error" not in result
         assert result["env_file"] == str(workspace / ".env.local")
@@ -106,6 +107,7 @@ class TestLoginIntegration:
             workspace=str(workspace),
             open_browser=False,
             token=SHORT_TOKEN,
+            skip_validation=True,
         )
         assert "error" in result
         assert not (workspace / ".env.local").exists()
@@ -115,6 +117,7 @@ class TestLoginIntegration:
             workspace=str(tmp_path / "does-not-exist"),
             open_browser=False,
             token=VALID_TOKEN,
+            skip_validation=True,
         )
         assert "error" in result
 
@@ -124,6 +127,7 @@ class TestLoginIntegration:
                 workspace=str(workspace),
                 open_browser=True,
                 token=VALID_TOKEN,
+                skip_validation=True,
             )
             assert opened.call_count == 0
 
@@ -133,6 +137,7 @@ class TestLoginIntegration:
             workspace=str(workspace),
             open_browser=False,
             token=VALID_TOKEN,
+            skip_validation=True,
         )
         assert result["gitignore_updated"] is True
         assert ".env.local" in (workspace / ".gitignore").read_text()
@@ -143,13 +148,19 @@ class TestGitHubSecretPush:
         """Critical: token must NEVER appear in subprocess args (visible to ps)."""
         captured = {}
 
-        def fake_run(args, input, **kwargs):
-            captured["args"] = args
-            captured["input"] = input
+        def fake_run(args, **kwargs):
+            # The new login flow calls subprocess.run twice: once to
+            # detect the git origin (no `input`), once to push the
+            # secret to GitHub (with `input`). We only care about the
+            # gh-secret-set call here.
+            if isinstance(args, list) and "gh" in args and "secret" in args:
+                captured["args"] = args
+                captured["input"] = kwargs.get("input")
 
             class Result:
                 returncode = 0
                 stderr = ""
+                stdout = ""
 
             return Result()
 
@@ -159,6 +170,7 @@ class TestGitHubSecretPush:
                 open_browser=False,
                 token=VALID_TOKEN,
                 github_repo="jetta-operating/labs",
+                skip_validation=True,
             )
 
         # Token must be in stdin, not in args
@@ -175,6 +187,7 @@ class TestGitHubSecretPush:
                 open_browser=False,
                 token=VALID_TOKEN,
                 github_repo="jetta-operating/labs",
+                skip_validation=True,
             )
         # Local write succeeded — the gh failure is sub-keyed, not top-level
         assert "error" not in result

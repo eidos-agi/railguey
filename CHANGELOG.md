@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.0 — `railguey login` gets a real popup + token validation
+
+- **Added**: OS-agnostic Tk popup for token entry. No more paste-in-shell. Default flow opens the Railway tokens page in the browser, then shows a popup with editable fields — token (masked), token name (default `gha-deploy`, editable), and an optional "also push to GitHub Actions secret" checkbox with auto-detected repo. The popup is modal, focused, and submittable via Enter.
+- **Added**: Pre-write Railway validation. After the user submits the popup, railguey calls Railway's GraphQL API to fetch project metadata — name, ID, environment, team — and shows a second popup confirming what's about to be written and where. A bad paste or wrong-account token fails here, before anything touches the filesystem.
+- **Added**: `_resolve_project_metadata` in `lib/graphql.py` — extends the existing `_resolve_project` with a project-name + team-name lookup so users see human-readable identifiers in the confirmation step.
+- **Added**: `_detect_github_repo` in `lib/login.py` — parses git remote URL (SSH or HTTPS form) so the popup can suggest the right `owner/repo` for the Actions-secret push without typing.
+- **Added**: Three-tier fallback chain when Tk isn't available — Tk popup → terminal getpass with structured confirmation → non-interactive default-confirm (so CI runs don't hang). Tk-less environments get an equivalent flow.
+- **Added**: New CLI flags — `--no-popup` forces the terminal flow even when Tk is available, `--skip-validation` skips the Railway API round-trip (offline / private network use).
+- **Refactored**: Popup logic moved to `lib/popup.py` so other railguey verbs can adopt the same pattern (token rotation, project switching, etc.).
+- **Tested**: 14 new tests in `tests/test_popup.py` covering the terminal fallback (when Tk isn't usable), the dispatcher's degradation path, and `_detect_github_repo` for both SSH and HTTPS git origins. Full suite: 251 passed, 14 xfailed.
+
 ## v0.4.0 — `railguey login` bootstraps tokens without paste-in-shell
 
 - **Added**: `railguey login WORKSPACE` — opens the Railway tokens page in the browser, prompts via masked `getpass` (token never echoed, never in shell history, never in `ps`), writes to `<workspace>/.env.local` with 0600 permissions, and patches `.gitignore` to exclude `.env.local` if needed. Closes the one manual gap in railguey's CLI-only workflow: getting the first token onto a fresh machine without paste-in-shell or paste-in-chat.

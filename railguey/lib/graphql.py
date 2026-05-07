@@ -90,6 +90,41 @@ async def _resolve_project(token: str) -> dict:
     return result.get("projectToken", {})
 
 
+async def _resolve_project_metadata(token: str) -> dict:
+    """Introspect a project token AND fetch human-readable project metadata.
+
+    Returns dict with: projectId, environmentId, projectName, teamName.
+    Used by `railguey login` to show users what they're about to bind to
+    before writing the token to disk. Failure to resolve metadata is
+    non-fatal — a token that resolves projectToken but not project.name
+    is still usable, just less informative in the confirmation step.
+    """
+    base = await _resolve_project(token)
+    if "error" in base:
+        return base
+    project_id = base.get("projectId")
+    if not project_id:
+        return {"error": "projectToken returned no projectId"}
+
+    query = """
+    query project($id: String!) {
+      project(id: $id) {
+        id
+        name
+        team { name }
+      }
+    }
+    """
+    result = await _gql(token, query, {"id": project_id})
+    project = result.get("project") if isinstance(result, dict) else None
+    return {
+        "projectId": project_id,
+        "environmentId": base.get("environmentId"),
+        "projectName": (project or {}).get("name"),
+        "teamName": ((project or {}).get("team") or {}).get("name"),
+    }
+
+
 async def _resolve_service_id(
     token: str, project_id: str, service_name: str
 ) -> str | None:
