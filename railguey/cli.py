@@ -12,6 +12,7 @@ import sys
 import click
 
 from railguey import __version__
+from railguey.lib import login as login_lib
 from railguey.lib import tools
 
 
@@ -43,6 +44,51 @@ def main():
 # ---------------------------------------------------------------------------
 # CLI-backed commands
 # ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("workspace")
+@click.option(
+    "--no-browser",
+    is_flag=True,
+    help="Do not open the Railway tokens page automatically (for headless / CI use).",
+)
+@click.option(
+    "--token",
+    default=None,
+    help="Pre-supplied token (skips the masked prompt). For CI / scripted use only.",
+)
+@click.option(
+    "--gh-secret",
+    "github_repo",
+    default=None,
+    metavar="OWNER/REPO",
+    help="After writing locally, also set the RAILWAY_TOKEN secret on this GitHub repo via `gh secret set`.",
+)
+def login(workspace, no_browser, token, github_repo):
+    """Bootstrap RAILWAY_TOKEN into WORKSPACE/.env.local.
+
+    Opens the Railway tokens page in your browser, prompts for the
+    token via masked input (never appears in terminal or shell history),
+    writes it to .env.local with 0600 permissions, and patches
+    .gitignore so it can't be committed accidentally.
+
+    Optionally pushes the token to a GitHub Actions repo secret with
+    `--gh-secret OWNER/REPO`. The token is piped to `gh` via stdin —
+    not passed on the command line — so it never appears in `ps` output.
+
+    Examples:
+        railguey login .
+        railguey login /path/to/repo --gh-secret jetta-operating/labs
+        railguey login . --no-browser --token "$RAILWAY_TOKEN"  # CI
+    """
+    result = login_lib.login(
+        workspace=workspace,
+        open_browser=not no_browser,
+        token=token,
+        github_repo=github_repo,
+    )
+    _output(result)
 
 
 @main.command()

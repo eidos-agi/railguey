@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0 — `railguey login` bootstraps tokens without paste-in-shell
+
+- **Added**: `railguey login WORKSPACE` — opens the Railway tokens page in the browser, prompts via masked `getpass` (token never echoed, never in shell history, never in `ps`), writes to `<workspace>/.env.local` with 0600 permissions, and patches `.gitignore` to exclude `.env.local` if needed. Closes the one manual gap in railguey's CLI-only workflow: getting the first token onto a fresh machine without paste-in-shell or paste-in-chat.
+- **Added**: `--gh-secret OWNER/REPO` flag — after writing locally, also pushes the token to a GitHub Actions repo secret via `gh secret set`. Token is piped to `gh` over stdin, never as an argv argument, so it cannot appear in `ps` output or any process inspection.
+- **Added**: `--no-browser` and `--token` flags for headless / CI use, with the `--token` form documented as less secure (prefer the prompt for human use).
+- **Hardened**: New `lib/login.py` validates token shape (length, no whitespace) before writing to disk, replaces an existing `RAILWAY_TOKEN=` line in place without disturbing other env vars, and chmod 0600s the file on POSIX systems.
+- **Tested**: 18 new tests in `tests/test_login.py` covering token validation, `.env.local` create/replace/append behavior, `.gitignore` patching, GitHub-secret push (asserting the token is passed via stdin and never via argv), and graceful fallback when `gh` is not installed.
+
 ## v0.3.1 — Volume CLI verbs + FOSS hygiene
 
 - **Added**: 4 CLI verbs wrapping the existing volume tools — `railguey volume-create <workspace> <service> <mount-path>`, `railguey volumes <workspace>`, `railguey volume-delete <workspace> <volume-id>`, `railguey volume-resize <workspace> <volume-instance-id> <size-mb>`. The underlying `volume_create` / `volumes` / `volume_delete` / `volume_resize` functions in `lib/tools.py` were merged in v0.2.x via PR #3 but never exposed as click commands; the 0.3.0 "cli-only" pivot made wiring them a substrate gap. Now closed.
