@@ -1,0 +1,42 @@
+{
+  "name": "railguey",
+  "version": "0.1.0",
+  "description": "Wrap the railguey CLI for reliable, project-token Railway deploys.",
+  "author": {
+    "name": "Eidos AGI",
+    "email": "hello@eidosagi.com",
+    "url": "https://github.com/eidos-agi"
+  },
+  "homepage": "https://github.com/eidos-agi/railguey",
+  "repository": "https://github.com/eidos-agi/railguey",
+  "license": "MIT",
+  "keywords": [
+    "eidos",
+    "railguey",
+    "railway",
+    "deploy",
+    "project-token",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Railguey",
+    "shortDescription": "Deploy Railway services through railguey.",
+    "longDescription": "Railguey gives Codex a safe operating guide for Railway deploys through the railguey CLI. Use it instead of the Railway CLI when a workspace has a project-scoped RAILWAY_TOKEN in .env.local and needs deploys, domains, logs, service status, or post-deploy proof.",
+    "developerName": "Eidos AGI",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Railway Deploys",
+      "Project Tokens",
+      "Deployment Logs",
+      "Custom Domains",
+      "Service Health"
+    ],
+    "defaultPrompt": [
+      "Use railguey to deploy this repo.",
+      "Check Railway service status with railguey.",
+      "Add a Railway custom domain with railguey.",
+      "Fetch deployment proof with railguey."
+    ]
+  }
+}
