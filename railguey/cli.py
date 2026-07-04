@@ -350,10 +350,20 @@ def doctor(workspace):
 
 @main.command()
 @click.argument("question")
-@click.option("--settle", default=3.0, help="Reply is done once the agent's TUI is unchanged this long (s).")
+@click.option(
+    "--settle",
+    default=3.0,
+    help="Reply is done once the agent's TUI is unchanged this long (s).",
+)
 @click.option("--max", "max_seconds", default=90.0, help="Hard cap on total wait (s).")
-@click.option("--reset", is_flag=True, help="Start a fresh conversation (drop prior context).")
-@click.option("--close", is_flag=True, help="Close the chat session after answering (default: keep it open for follow-ups).")
+@click.option(
+    "--reset", is_flag=True, help="Start a fresh conversation (drop prior context)."
+)
+@click.option(
+    "--close",
+    is_flag=True,
+    help="Close the chat session after answering (default: keep it open for follow-ups).",
+)
 def research(question, settle, max_seconds, reset, close):
     """Ask Railway's own agent a QUESTION via `ssh railway.new`.
 
@@ -370,10 +380,16 @@ def research(question, settle, max_seconds, reset, close):
         railguey research "What regions can I deploy to?" --reset
     """
     from railguey.lib import research as research_lib
-    _output(research_lib.research(
-        question, settle=settle, max_seconds=max_seconds,
-        reset=reset, keep_session=not close,
-    ))
+
+    _output(
+        research_lib.research(
+            question,
+            settle=settle,
+            max_seconds=max_seconds,
+            reset=reset,
+            keep_session=not close,
+        )
+    )
 
 
 @main.group()
@@ -413,7 +429,9 @@ def bucket_info(workspace, bucket_name):
 @bucket.command("credentials")
 @click.argument("workspace")
 @click.argument("bucket_name")
-@click.option("--reset", is_flag=True, help="Reset S3 credentials before returning them.")
+@click.option(
+    "--reset", is_flag=True, help="Reset S3 credentials before returning them."
+)
 @click.option("--yes", is_flag=True, help="Confirm credential reset.")
 def bucket_credentials(workspace, bucket_name, reset, yes):
     """Show or reset S3-compatible bucket credentials."""

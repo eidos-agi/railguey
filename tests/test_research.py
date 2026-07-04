@@ -29,7 +29,13 @@ def test_fresh_session_navigates_then_answers(monkeypatch):
     monkeypatch.setattr(R, "_tmux", fake_tmux)
     # Not at prompt until after navigate; then emux ask returns the answer.
     prompt_state = {"at": False}
-    monkeypatch.setattr(R, "_capture", lambda lines=200: "Message the agent…" if prompt_state["at"] else "Select a project")
+    monkeypatch.setattr(
+        R,
+        "_capture",
+        lambda lines=200: (
+            "Message the agent…" if prompt_state["at"] else "Select a project"
+        ),
+    )
 
     def fake_run(cmd, capture_output, text, timeout):
         if cmd[1] == "navigate":
@@ -49,8 +55,12 @@ def test_fresh_session_navigates_then_answers(monkeypatch):
 def test_reused_session_skips_navigation(monkeypatch):
     """A live session already at the prompt must NOT re-navigate (keeps context)."""
     _base(monkeypatch)
-    monkeypatch.setattr(R, "_tmux", lambda args, timeout=10: _Proc(returncode=0))  # session exists
-    monkeypatch.setattr(R, "_capture", lambda lines=200: "Message the agent…")  # already at prompt
+    monkeypatch.setattr(
+        R, "_tmux", lambda args, timeout=10: _Proc(returncode=0)
+    )  # session exists
+    monkeypatch.setattr(
+        R, "_capture", lambda lines=200: "Message the agent…"
+    )  # already at prompt
 
     seen = {"navigate": False}
 
@@ -68,16 +78,25 @@ def test_reused_session_skips_navigation(monkeypatch):
 
 
 def test_missing_emux(monkeypatch):
-    monkeypatch.setattr(R.shutil, "which", lambda name: None if name == "emux" else f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        R.shutil, "which", lambda name: None if name == "emux" else f"/usr/bin/{name}"
+    )
     out = R.research("anything")
     assert "error" in out and "emux" in out["error"]
 
 
 def test_navigation_fails_to_reach_prompt(monkeypatch):
     _base(monkeypatch)
-    monkeypatch.setattr(R, "_tmux", lambda args, timeout=10: _Proc(returncode=1))  # fresh each check
-    monkeypatch.setattr(R, "_capture", lambda lines=200: "still loading…")  # never at prompt
-    monkeypatch.setattr(R.subprocess, "run",
-                        lambda cmd, capture_output, text, timeout: _Proc(stdout="", stderr="stalled"))
+    monkeypatch.setattr(
+        R, "_tmux", lambda args, timeout=10: _Proc(returncode=1)
+    )  # fresh each check
+    monkeypatch.setattr(
+        R, "_capture", lambda lines=200: "still loading…"
+    )  # never at prompt
+    monkeypatch.setattr(
+        R.subprocess,
+        "run",
+        lambda cmd, capture_output, text, timeout: _Proc(stdout="", stderr="stalled"),
+    )
     out = R.research("q?")
     assert "error" in out and "prompt" in out["error"]

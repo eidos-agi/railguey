@@ -19,6 +19,7 @@ class TestCanUseTk:
         # On systems where tkinter is available (almost all dev machines)
         try:
             import tkinter  # noqa: F401
+
             assert popup._can_use_tk() is True
         except ImportError:
             assert popup._can_use_tk() is False
@@ -37,9 +38,14 @@ class TestTerminalPromptForToken:
         assert r.token == ""
 
     def test_uses_default_token_name_when_user_hits_enter(self):
-        with patch("sys.stdin") as fake_stdin, \
-             patch("getpass.getpass", return_value="abcdef0123456789-test-token-long-enough"), \
-             patch("builtins.input", return_value=""):
+        with (
+            patch("sys.stdin") as fake_stdin,
+            patch(
+                "getpass.getpass",
+                return_value="abcdef0123456789-test-token-long-enough",
+            ),
+            patch("builtins.input", return_value=""),
+        ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_prompt_for_token(
                 railway_token_url="https://railway.app/account/tokens",
@@ -52,9 +58,14 @@ class TestTerminalPromptForToken:
         assert r.push_to_github is False
 
     def test_accepts_user_supplied_name(self):
-        with patch("sys.stdin") as fake_stdin, \
-             patch("getpass.getpass", return_value="abcdef0123456789-test-token-long-enough"), \
-             patch("builtins.input", return_value="custom-name"):
+        with (
+            patch("sys.stdin") as fake_stdin,
+            patch(
+                "getpass.getpass",
+                return_value="abcdef0123456789-test-token-long-enough",
+            ),
+            patch("builtins.input", return_value="custom-name"),
+        ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_prompt_for_token(
                 railway_token_url="https://railway.app/account/tokens",
@@ -64,8 +75,10 @@ class TestTerminalPromptForToken:
         assert r.token_name == "custom-name"
 
     def test_cancelled_on_empty_token(self):
-        with patch("sys.stdin") as fake_stdin, \
-             patch("getpass.getpass", return_value=""):
+        with (
+            patch("sys.stdin") as fake_stdin,
+            patch("getpass.getpass", return_value=""),
+        ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_prompt_for_token(
                 railway_token_url="https://railway.app/account/tokens",
@@ -77,32 +90,47 @@ class TestTerminalPromptForToken:
 
 class TestTerminalConfirmSave:
     def test_confirms_when_user_presses_enter(self):
-        with patch("sys.stdin") as fake_stdin, \
-             patch("builtins.input", return_value=""):
+        with patch("sys.stdin") as fake_stdin, patch("builtins.input", return_value=""):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_confirm_save(
-                project_name="x", project_id="p", environment_id="e",
-                team_name="t", env_file_path="/tmp/.env.local", github_repo=None,
+                project_name="x",
+                project_id="p",
+                environment_id="e",
+                team_name="t",
+                env_file_path="/tmp/.env.local",
+                github_repo=None,
             )
         assert r.confirmed is True
 
     def test_confirms_when_user_types_y(self):
-        with patch("sys.stdin") as fake_stdin, \
-             patch("builtins.input", return_value="y"):
+        with (
+            patch("sys.stdin") as fake_stdin,
+            patch("builtins.input", return_value="y"),
+        ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_confirm_save(
-                project_name="x", project_id="p", environment_id="e",
-                team_name="t", env_file_path="/tmp/.env.local", github_repo=None,
+                project_name="x",
+                project_id="p",
+                environment_id="e",
+                team_name="t",
+                env_file_path="/tmp/.env.local",
+                github_repo=None,
             )
         assert r.confirmed is True
 
     def test_cancels_on_n(self):
-        with patch("sys.stdin") as fake_stdin, \
-             patch("builtins.input", return_value="n"):
+        with (
+            patch("sys.stdin") as fake_stdin,
+            patch("builtins.input", return_value="n"),
+        ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_confirm_save(
-                project_name="x", project_id="p", environment_id="e",
-                team_name="t", env_file_path="/tmp/.env.local", github_repo=None,
+                project_name="x",
+                project_id="p",
+                environment_id="e",
+                team_name="t",
+                env_file_path="/tmp/.env.local",
+                github_repo=None,
             )
         assert r.confirmed is False
 
@@ -113,19 +141,28 @@ class TestTerminalConfirmSave:
         with patch("sys.stdin") as fake_stdin:
             fake_stdin.isatty.return_value = False
             r = popup._terminal_confirm_save(
-                project_name="x", project_id="p", environment_id="e",
-                team_name="t", env_file_path="/tmp/.env.local", github_repo=None,
+                project_name="x",
+                project_id="p",
+                environment_id="e",
+                team_name="t",
+                env_file_path="/tmp/.env.local",
+                github_repo=None,
             )
         assert r.confirmed is True
 
 
 class TestPromptDispatcher:
     def test_falls_back_to_terminal_when_tk_unavailable(self):
-        with patch("railguey.lib.popup._can_use_tk", return_value=False), \
-             patch("railguey.lib.popup._terminal_prompt_for_token") as fake:
+        with (
+            patch("railguey.lib.popup._can_use_tk", return_value=False),
+            patch("railguey.lib.popup._terminal_prompt_for_token") as fake,
+        ):
             fake.return_value = popup.TokenPromptResult(
-                token="x" * 30, token_name="gha-deploy",
-                push_to_github=False, github_repo="", cancelled=False,
+                token="x" * 30,
+                token_name="gha-deploy",
+                push_to_github=False,
+                github_repo="",
+                cancelled=False,
             )
             r = popup.prompt_for_token("https://railway.app/account/tokens")
             assert fake.called
@@ -158,7 +195,10 @@ class TestDetectGithubRepo:
             stderr = ""
 
         with p("railguey.lib.login.subprocess.run", return_value=FakeResult()):
-            assert _detect_github_repo(tmp_path) == "jetta-operating/jetta-intelligence-dot-com"
+            assert (
+                _detect_github_repo(tmp_path)
+                == "jetta-operating/jetta-intelligence-dot-com"
+            )
 
     def test_returns_none_when_no_remote(self, tmp_path):
         from railguey.lib.login import _detect_github_repo

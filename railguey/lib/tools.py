@@ -2387,10 +2387,16 @@ async def _resolve_bucket(
     if "error" in topology:
         return topology
     for candidate in topology["buckets"]:
-        if candidate["id"].lower() == bucket.lower() or candidate["name"].lower() == bucket.lower():
+        if (
+            candidate["id"].lower() == bucket.lower()
+            or candidate["name"].lower() == bucket.lower()
+        ):
             return candidate
     for candidate in topology["projectBuckets"]:
-        if candidate.get("id", "").lower() == bucket.lower() or candidate.get("name", "").lower() == bucket.lower():
+        if (
+            candidate.get("id", "").lower() == bucket.lower()
+            or candidate.get("name", "").lower() == bucket.lower()
+        ):
             return {
                 "error": f"Bucket '{bucket}' exists in the project but is not deployed in this environment",
                 "bucketId": candidate.get("id", ""),
