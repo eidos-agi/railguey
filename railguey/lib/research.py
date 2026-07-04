@@ -54,9 +54,14 @@ def research(
         "ssh -o StrictHostKeyChecking=no railway.new",
     ])
     try:
-        # The menu (Chat with the agent -> workspace -> project) has a variable
-        # number of steps — the highlighted default is what we want at each one,
-        # so poll and press Enter until the free-text prompt appears.
+        # NAVIGATION IS DUMB BY DESIGN (for now): we accept the highlighted
+        # DEFAULT at each menu step (Chat with agent -> first workspace -> first
+        # project) by pressing Enter until the free-text prompt appears. This is
+        # fine for project-AGNOSTIC product questions ("how do I do X on
+        # Railway"), which is the intended use. It does NOT let you target a
+        # specific workspace/project — it always takes the first-highlighted one.
+        # If you need project-specific research, add --project/--workspace flags
+        # that read each menu and select by name (see PR discussion).
         reached = False
         for _ in range(8):
             time.sleep(2)
