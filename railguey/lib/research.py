@@ -2,12 +2,17 @@
 
 Railway ships an interactive agent at `ssh railway.new` that answers questions
 about deploys, cron, logs, and its own product from the official docs. This
-module drives that agent in a throwaway tmux session and returns its answer.
+module drives that agent and returns its answer.
 
-The actual "type a prompt, wait for the streaming TUI to stop changing, read the
-reply" step is delegated to `emux ask` — emux's reusable primitive for talking
-to another AI through its terminal UI. railguey just knows the railway.new menu
-navigation; emux knows how to converse.
+Two emux primitives do the work (emux = "talk to another AI through its TUI"):
+- `emux navigate` — model-driven: reach the agent's chat prompt through the
+  menu, letting a model pick keystrokes (handles reordering / new screens).
+- `emux ask` — send a question, wait for the streamed reply to settle, return it.
+
+The chat session is PERSISTENT across calls. The first `research()` connects and
+navigates to the prompt; later calls reuse the SAME live session, so the agent
+keeps the conversation context (follow-ups like "and for that service?" work).
+Pass reset=True (or `railguey research --reset`) to start a fresh conversation.
 """
 
 from __future__ import annotations
@@ -18,71 +23,92 @@ import time
 from typing import Any
 
 _SESSION = "railguey-research"
-# Strings that indicate we've reached the agent's free-text input.
+# Strings that indicate we're at the agent's free-text input.
 _PROMPT_MARKERS = ("Message the agent", "Ask a question")
+_NAV_GOAL = (
+    "Reach the free-text chat input where I can type a question to the Railway "
+    "agent (the screen shows 'Message the agent…' or 'Ask a question'). Choose "
+    "the option about chatting with the agent. At any workspace or project "
+    "picker, select the first / highlighted option."
+)
 
 
 def _tmux(args: list[str], timeout: int = 10) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["tmux", *args], capture_output=True, text=True, timeout=timeout)
 
 
-def _capture(session: str, lines: int = 200) -> str:
-    r = _tmux(["capture-pane", "-t", session, "-p", "-S", f"-{lines}"])
+def _session_exists() -> bool:
+    return _tmux(["has-session", "-t", _SESSION]).returncode == 0
+
+
+def _capture(lines: int = 200) -> str:
+    r = _tmux(["capture-pane", "-t", _SESSION, "-p", "-S", f"-{lines}"])
     return r.stdout if r.returncode == 0 else ""
+
+
+def _at_prompt() -> bool:
+    return any(m in _capture() for m in _PROMPT_MARKERS)
 
 
 def research(
     question: str,
     settle: float = 3.0,
     max_seconds: float = 90.0,
-    keep_session: bool = False,
+    reset: bool = False,
+    keep_session: bool = True,
 ) -> dict[str, Any]:
     """Ask the Railway agent `question` via `ssh railway.new`; return its answer.
 
-    Requires `tmux`, `ssh`, and `emux` on PATH. Spawns a fresh session, walks the
-    menu to the agent prompt, delegates the Q&A to `emux ask`, and (unless
-    keep_session) tears the session down.
+    Reuses a persistent chat session so the agent keeps context across questions.
+    Requires `tmux`, `ssh`, and `emux` on PATH.
+
+    Args:
+        question: What to ask the agent.
+        settle: Seconds of an unchanged pane before the reply is considered done.
+        max_seconds: Hard cap on waiting for a reply.
+        reset: Tear down any existing chat and start a fresh conversation.
+        keep_session: Leave the session alive after answering (default True) so
+            the next call continues the same conversation. False closes it.
     """
     for binary in ("tmux", "ssh", "emux"):
         if shutil.which(binary) is None:
             hint = " (install: `uv tool install emux`)" if binary == "emux" else ""
             return {"error": f"{binary} not found on PATH{hint}"}
 
-    _tmux(["kill-session", "-t", _SESSION])  # clean slate if a prior run left one
-    _tmux([
-        "new-session", "-d", "-s", _SESSION, "-x", "210", "-y", "52",
-        "ssh -o StrictHostKeyChecking=no railway.new",
-    ])
-    try:
-        # NAVIGATION IS DUMB BY DESIGN (for now): we accept the highlighted
-        # DEFAULT at each menu step (Chat with agent -> first workspace -> first
-        # project) by pressing Enter until the free-text prompt appears. This is
-        # fine for project-AGNOSTIC product questions ("how do I do X on
-        # Railway"), which is the intended use. It does NOT let you target a
-        # specific workspace/project — it always takes the first-highlighted one.
-        # If you need project-specific research, add --project/--workspace flags
-        # that read each menu and select by name (see PR discussion).
-        reached = False
-        for _ in range(8):
-            time.sleep(2)
-            screen = _capture(_SESSION)
-            if any(m in screen for m in _PROMPT_MARKERS):
-                reached = True
-                break
-            _tmux(["send-keys", "-t", _SESSION, "Enter"])  # accept highlighted item
-        if not reached:
-            return {"error": "could not reach the Railway agent prompt",
-                    "last_screen": _capture(_SESSION)}
+    if reset and _session_exists():
+        _tmux(["kill-session", "-t", _SESSION])
 
-        # Hand off to emux's settle-based converse primitive. `--busy thinking`
-        # stops emux from mistaking the agent's "thinking…" indicator for the reply.
+    fresh = False
+    if not _session_exists():
+        fresh = True
+        _tmux([
+            "new-session", "-d", "-s", _SESSION, "-x", "210", "-y", "52",
+            "ssh -o StrictHostKeyChecking=no railway.new",
+        ])
+        time.sleep(3)  # let the SSH TUI paint its first screen
+
+    try:
+        # Only navigate when we're not already at the prompt — a reused session
+        # mid-conversation is already there, so we skip straight to asking (and
+        # preserve context).
+        if not _at_prompt():
+            nav = subprocess.run(
+                ["emux", "navigate", _SESSION, _NAV_GOAL,
+                 "--until", _PROMPT_MARKERS[0], "--max-steps", "12"],
+                capture_output=True, text=True, timeout=240,
+            )
+            if not _at_prompt():
+                return {"error": "could not reach the Railway agent prompt",
+                        "nav_stderr": (nav.stderr or "").strip(),
+                        "last_screen": _capture()}
+
+        # Ask via emux's settle-based converse; --busy thinking keeps the agent's
+        # streaming indicator from being read back as the reply.
         proc = subprocess.run(
             ["emux", "ask", _SESSION, question,
              "--settle", str(settle), "--max", str(max_seconds), "--busy", "thinking"],
             capture_output=True, text=True, timeout=max_seconds + 30,
         )
-        # emux's reply delta includes the echoed prompt line — drop it and any
-        # leftover busy indicator.
         reply_lines = [
             ln for ln in (proc.stdout or "").splitlines()
             if ln.strip() and ln.strip() != question.strip() and "thinking" not in ln.lower()
@@ -90,7 +116,14 @@ def research(
         answer = "\n".join(reply_lines).strip()
         if not answer:
             return {"error": "no answer from the Railway agent", "stderr": (proc.stderr or "").strip()}
-        return {"ok": True, "question": question, "answer": answer, "via": "ssh railway.new"}
+        return {
+            "ok": True,
+            "question": question,
+            "answer": answer,
+            "via": "ssh railway.new",
+            "session": _SESSION,
+            "new_conversation": fresh or reset,
+        }
     finally:
         if not keep_session:
             _tmux(["kill-session", "-t", _SESSION])
