@@ -32,8 +32,18 @@ def _no_account_system():
 
 @pytest.fixture
 def workspace(tmp_path):
-    """Bare temporary workspace directory — no files."""
-    return tmp_path
+    """Bare temporary workspace directory — no files.
+
+    Nested one level under tmp_path so its PARENT has no siblings: _load_token
+    falls back to scanning sibling dirs for a shared RAILWAY_TOKEN, and pytest's
+    per-test tmp_paths are siblings of each other — several carry a test
+    `.env.local`. Returning bare tmp_path let that scan find those tokens, so the
+    "no token" tests non-deterministically failed to raise. An isolated parent
+    fixes it.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    return ws
 
 
 @pytest.fixture

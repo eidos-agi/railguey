@@ -20,7 +20,6 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
-import getpass
 import os
 import re
 import subprocess

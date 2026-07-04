@@ -8,10 +8,8 @@ itself is unit-tested with patched stdin/stdout.
 
 from __future__ import annotations
 
-from io import StringIO
 from unittest.mock import patch
 
-import pytest
 
 from railguey.lib import popup
 
