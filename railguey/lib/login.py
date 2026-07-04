@@ -20,7 +20,6 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
-import getpass
 import os
 import re
 import subprocess
@@ -44,7 +43,9 @@ def _validate_token(token: str) -> None:
     authenticate.
     """
     if len(token) < 20:
-        raise ValueError("Token looks too short — Railway tokens are typically 30+ chars.")
+        raise ValueError(
+            "Token looks too short — Railway tokens are typically 30+ chars."
+        )
     if any(c.isspace() for c in token):
         raise ValueError("Token contains whitespace — likely a paste error.")
 
@@ -84,7 +85,9 @@ def _write_token(workspace: Path, token: str) -> Path:
         existing = envfile.read_text()
         if TOKEN_LINE_PATTERN.search(existing):
             # Replace the existing line
-            new_content = TOKEN_LINE_PATTERN.sub(f"RAILWAY_TOKEN={token}", existing, count=1)
+            new_content = TOKEN_LINE_PATTERN.sub(
+                f"RAILWAY_TOKEN={token}", existing, count=1
+            )
             # Ensure the replaced line still terminates with newline
             if not new_content.endswith("\n"):
                 new_content += "\n"

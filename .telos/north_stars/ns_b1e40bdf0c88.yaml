@@ -1,0 +1,11 @@
+id: "ns_b1e40bdf0c88"
+project_id: "8dabba3d-85ce-4d99-895e-6380e58cb307"
+goal: "Project-scoped Railway control for safe CI/CD and AI agents: read RAILWAY_TOKEN from .env.local (no interactive login), every mutating op auditable and fails loud (non-zero on tool error). Now also: vendor product research by driving Railway's own ssh agent via emux."
+metric: "Commands are project-token-scoped; tool failures exit non-zero; research reuses emux (no bespoke TUI driving)."
+stop_max_iters: null
+stop_zero_delta_n: 3
+signature: null
+created_at: "2026-07-04T02:48:09.032577+00:00"
+closed_at: null
+outcome: null
+repo_path: "/Users/dshanklinbv/repos-eidos-agi/railguey"

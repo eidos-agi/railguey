@@ -348,6 +348,50 @@ def doctor(workspace):
     _output(_run(tools.doctor(workspace)))
 
 
+@main.command()
+@click.argument("question")
+@click.option(
+    "--settle",
+    default=3.0,
+    help="Reply is done once the agent's TUI is unchanged this long (s).",
+)
+@click.option("--max", "max_seconds", default=90.0, help="Hard cap on total wait (s).")
+@click.option(
+    "--reset", is_flag=True, help="Start a fresh conversation (drop prior context)."
+)
+@click.option(
+    "--close",
+    is_flag=True,
+    help="Close the chat session after answering (default: keep it open for follow-ups).",
+)
+def research(question, settle, max_seconds, reset, close):
+    """Ask Railway's own agent a QUESTION via `ssh railway.new`.
+
+    Product research from the vendor's agent. The chat session PERSISTS across
+    calls, so the agent keeps context — ask a follow-up and it remembers. Use
+    --reset to start over, --close to end the session.
+
+    Navigation to the agent prompt is model-driven (`emux navigate`); the Q&A is
+    `emux ask` (settle-based). Both need tmux + emux on PATH.
+
+    Examples:
+        railguey research "How do I add a cron schedule to a service?"
+        railguey research "and how do I see its logs?"        # follow-up, same context
+        railguey research "What regions can I deploy to?" --reset
+    """
+    from railguey.lib import research as research_lib
+
+    _output(
+        research_lib.research(
+            question,
+            settle=settle,
+            max_seconds=max_seconds,
+            reset=reset,
+            keep_session=not close,
+        )
+    )
+
+
 @main.group()
 def bucket():
     """Manage Railway storage buckets."""
@@ -385,7 +429,9 @@ def bucket_info(workspace, bucket_name):
 @bucket.command("credentials")
 @click.argument("workspace")
 @click.argument("bucket_name")
-@click.option("--reset", is_flag=True, help="Reset S3 credentials before returning them.")
+@click.option(
+    "--reset", is_flag=True, help="Reset S3 credentials before returning them."
+)
 @click.option("--yes", is_flag=True, help="Confirm credential reset.")
 def bucket_credentials(workspace, bucket_name, reset, yes):
     """Show or reset S3-compatible bucket credentials."""

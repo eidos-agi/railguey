@@ -133,7 +133,11 @@ def _tk_prompt_for_token(
     from tkinter import ttk
 
     result = TokenPromptResult(
-        token="", token_name=default_token_name, push_to_github=False, github_repo="", cancelled=True
+        token="",
+        token_name=default_token_name,
+        push_to_github=False,
+        github_repo="",
+        cancelled=True,
     )
 
     root = tk.Tk()
@@ -170,12 +174,18 @@ def _tk_prompt_for_token(
     url_entry.grid(row=2, column=1, sticky="we", **pad)
 
     # Token name (editable, defaults provided)
-    ttk.Label(root, text="Token name (for your reference):").grid(row=3, column=0, sticky="e", **pad)
+    ttk.Label(root, text="Token name (for your reference):").grid(
+        row=3, column=0, sticky="e", **pad
+    )
     name_var = tk.StringVar(value=default_token_name)
-    ttk.Entry(root, textvariable=name_var, width=50).grid(row=3, column=1, sticky="we", **pad)
+    ttk.Entry(root, textvariable=name_var, width=50).grid(
+        row=3, column=1, sticky="we", **pad
+    )
 
     # Token (masked)
-    ttk.Label(root, text="Paste token (hidden):").grid(row=4, column=0, sticky="e", **pad)
+    ttk.Label(root, text="Paste token (hidden):").grid(
+        row=4, column=0, sticky="e", **pad
+    )
     token_var = tk.StringVar()
     token_entry = ttk.Entry(root, textvariable=token_var, show="•", width=50)
     token_entry.grid(row=4, column=1, sticky="we", **pad)
@@ -189,9 +199,13 @@ def _tk_prompt_for_token(
         variable=push_var,
     ).grid(row=5, column=0, columnspan=2, sticky="w", **pad)
 
-    ttk.Label(root, text="GitHub repo (owner/repo):").grid(row=6, column=0, sticky="e", **pad)
+    ttk.Label(root, text="GitHub repo (owner/repo):").grid(
+        row=6, column=0, sticky="e", **pad
+    )
     repo_var = tk.StringVar(value=suggested_github_repo)
-    ttk.Entry(root, textvariable=repo_var, width=50).grid(row=6, column=1, sticky="we", **pad)
+    ttk.Entry(root, textvariable=repo_var, width=50).grid(
+        row=6, column=1, sticky="we", **pad
+    )
 
     # Buttons
     btn_frame = ttk.Frame(root)
@@ -314,7 +328,9 @@ def _terminal_prompt_for_token(
         )
 
     print(f"Open this URL in your browser to mint a token: {railway_token_url}")
-    print("(railguey would normally show a popup — Tk isn't available, falling back to terminal.)")
+    print(
+        "(railguey would normally show a popup — Tk isn't available, falling back to terminal.)"
+    )
     token = getpass.getpass("Paste token (hidden): ").strip()
     if not token:
         return TokenPromptResult(
@@ -330,9 +346,13 @@ def _terminal_prompt_for_token(
 
     push_repo = ""
     if suggested_github_repo:
-        push_input = input(
-            f"Also push to GitHub Actions secret on '{suggested_github_repo}'? [y/N]: "
-        ).strip().lower()
+        push_input = (
+            input(
+                f"Also push to GitHub Actions secret on '{suggested_github_repo}'? [y/N]: "
+            )
+            .strip()
+            .lower()
+        )
         if push_input == "y":
             push_repo = suggested_github_repo
 

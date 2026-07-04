@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import stat
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -100,7 +99,9 @@ class TestLoginIntegration:
         )
         assert "error" not in result
         assert result["env_file"] == str(workspace / ".env.local")
-        assert (workspace / ".env.local").read_text() == f"RAILWAY_TOKEN={VALID_TOKEN}\n"
+        assert (
+            workspace / ".env.local"
+        ).read_text() == f"RAILWAY_TOKEN={VALID_TOKEN}\n"
 
     def test_login_rejects_invalid_token(self, workspace):
         result = login_lib.login(
