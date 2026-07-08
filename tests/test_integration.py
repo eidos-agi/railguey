@@ -394,10 +394,14 @@ class TestStress:
         assert "not found" in result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_empty_workspace_returns_clean_error(self, tmp_path):
-        """Workspace with no .env.local should fail gracefully."""
+    async def test_empty_workspace_returns_clean_error(self, workspace):
+        """Workspace with no .env.local should fail gracefully.
+
+        Uses the nested `workspace` fixture (not raw tmp_path): the sibling-scan
+        fallback would otherwise find token-bearing tmp dirs left by other tests.
+        """
         with pytest.raises(ValueError, match="No project-scoped Railway token found"):
-            _load_token(str(tmp_path))
+            _load_token(str(workspace))
 
     @pytest.mark.asyncio
     async def test_concurrent_queries_dont_interfere(self):

@@ -77,3 +77,51 @@ class TestLoadToken:
     def test_resolves_tilde_path(self, workspace):
         write_file(workspace / ".env.local", "RAILWAY_TOKEN=tilde-test\n")
         assert _load_token(str(workspace)) == "tilde-test"
+
+
+class TestSiblingDiscovery:
+    """Fallback: a fresh workspace inherits the project token when ≥2
+    sibling repos under the same parent already carry the same value."""
+
+    def _sibling(self, parent, name, token, fname=".env.local"):
+        write_file(parent / name / fname, f"RAILWAY_TOKEN={token}\n")
+
+    def test_inherits_token_shared_by_two_siblings(self, workspace):
+        parent = workspace.parent
+        self._sibling(parent, "repo-a", "proj-token")
+        self._sibling(parent, "repo-b", "proj-token")
+        assert _load_token(str(workspace)) == "proj-token"
+
+    def test_writes_inherited_token_to_env_local(self, workspace):
+        parent = workspace.parent
+        self._sibling(parent, "repo-a", "proj-token")
+        self._sibling(parent, "repo-b", "proj-token")
+        _load_token(str(workspace))
+        body = (workspace / ".env.local").read_text()
+        assert "RAILWAY_TOKEN=proj-token" in body
+        assert "repo-a" in body and "repo-b" in body  # provenance comment
+
+    def test_single_sibling_is_not_enough(self, workspace):
+        self._sibling(workspace.parent, "repo-a", "lonely-token")
+        with pytest.raises(ValueError, match="No project-scoped Railway token found"):
+            _load_token(str(workspace))
+
+    def test_majority_value_wins(self, workspace):
+        parent = workspace.parent
+        self._sibling(parent, "repo-a", "majority")
+        self._sibling(parent, "repo-b", "majority")
+        self._sibling(parent, "repo-c", "outlier")
+        assert _load_token(str(workspace)) == "majority"
+
+    def test_own_env_local_beats_siblings(self, workspace):
+        parent = workspace.parent
+        self._sibling(parent, "repo-a", "sibling-token")
+        self._sibling(parent, "repo-b", "sibling-token")
+        write_file(workspace / ".env.local", "RAILWAY_TOKEN=own-token\n")
+        assert _load_token(str(workspace)) == "own-token"
+
+    def test_reads_sibling_plain_env_files(self, workspace):
+        parent = workspace.parent
+        self._sibling(parent, "repo-a", "env-token", fname=".env")
+        self._sibling(parent, "repo-b", "env-token", fname=".env")
+        assert _load_token(str(workspace)) == "env-token"

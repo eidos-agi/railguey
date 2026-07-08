@@ -61,6 +61,7 @@ If CI fails, GitHub tells you. If the deploy fails, the CLI returns an error. If
 | **[WHY-NOT-RAILWAY-APP.md](WHY-NOT-RAILWAY-APP.md)** | The architectural argument — why coupling CI/CD triggering with deployment is a design flaw, not just a bug |
 | **[WHY-RAILGUEY.md](WHY-RAILGUEY.md)** | The evidence — four incidents, community reports, and what the project-token pattern does differently |
 | **[WHY-RAILGUEY.md#case-study](WHY-RAILGUEY.md#case-study-ghost-repo-links-block-env-var-operations-march-2026)** | Real-world case study — ghost GitHub repo links silently blocked env var operations across 5 services |
+| **[docs/railway-agent-ssh.md](docs/railway-agent-ssh.md)** | `railguey research` — asking Railway's own agent about Railway services over `ssh railway.new`: setup, persistent conversations, flags, troubleshooting |
 
 ## When to use railguey
 
@@ -169,6 +170,7 @@ Core CLI commands, all token-based. No Railway CLI required.
 | `railguey bucket rename` | Rename a bucket display name |
 | `railguey bucket delete` | Delete a bucket from the environment (requires `--yes`) |
 | `railguey doctor` | Audit a workspace for deployment best practices |
+| `railguey research` | Ask Railway's own agent a question via `ssh railway.new` — see [docs/railway-agent-ssh.md](docs/railway-agent-ssh.md) |
 
 `railguey doctor` checks:
 1. `RAILWAY_TOKEN` exists in `.env.local`
@@ -176,7 +178,7 @@ Core CLI commands, all token-based. No Railway CLI required.
 3. GitHub Actions deploy workflow exists with token-based CI/CD
 4. No services linked to GitHub repos
 
-Every command requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`.
+Every command requires a `workspace` parameter — the absolute path to a project directory that has a `.env.local` (or `.env`) containing `RAILWAY_TOKEN`. The one exception is `railguey research`, which talks to Railway's public agent endpoint and needs no token (it does need `tmux` and [`emux`](https://github.com/eidos-agi/emux) on PATH).
 
 ## Example
 
