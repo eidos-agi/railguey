@@ -264,6 +264,25 @@ async def preflight(service: str, workspace: str | None = None) -> dict:
                         text=True,
                         timeout=30,
                     )
+                    # FAIL CLOSED. If the command itself failed (exit != 0 —
+                    # e.g. "Cannot find project ref", not linked), stdout is
+                    # empty, the parser finds zero unsynced rows, and the gate
+                    # would report "All migrations synced" — greenlighting a
+                    # deploy having verified NOTHING, exactly when the check is
+                    # needed most. A gate that cannot check must block, not pass.
+                    if result.returncode != 0:
+                        blocking.append(
+                            {
+                                "check": f"dependency:{target_name}",
+                                "status": "fail",
+                                "detail": (
+                                    f"migration check could not run (exit "
+                                    f"{result.returncode}): "
+                                    f"{(result.stderr or result.stdout or '').strip()[:200]}"
+                                ),
+                            }
+                        )
+                        continue
                     # Look for lines where Local has a value but Remote is empty
                     unsynced = []
                     for line in result.stdout.split("\n"):
