@@ -582,7 +582,13 @@ async def domain(
         # Custom domain
         query = """
         mutation customDomainCreate($input: CustomDomainCreateInput!) {
-          customDomainCreate(input: $input) { id domain }
+          customDomainCreate(input: $input) {
+            id domain
+            status {
+              certificateStatus
+              dnsRecords { hostlabel requiredValue currentValue status }
+            }
+          }
         }
         """
         input_vars: dict = {
@@ -615,12 +621,19 @@ async def domain(
             return result
         created = result.get("serviceDomainCreate", {})
 
-    return {
+    out = {
         "domain": created.get("domain", ""),
         "id": created.get("id", ""),
         "service": service,
         "custom": domain is not None,
     }
+    # Custom domains: surface Railway's REQUIRED CNAME target + cert state so the
+    # caller wires DNS to the right value (it is NOT the service's public domain).
+    status = created.get("status") or {}
+    if status:
+        out["certificateStatus"] = status.get("certificateStatus", "")
+        out["dnsRecords"] = status.get("dnsRecords", [])
+    return out
 
 
 async def _find_existing_domain(
