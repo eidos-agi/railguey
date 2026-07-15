@@ -139,7 +139,13 @@ def logs(workspace, service, lines, build, filter_str):
 @click.argument("workspace")
 @click.argument("service")
 def deploy(workspace, service):
-    """Trigger a deploy for a Railway service (non-blocking)."""
+    """Rebuild the service's EXISTING source snapshot (non-blocking).
+
+    Does NOT ship new code: it re-runs the build for whatever source the
+    service already has (linked repo commit or previous upload) and reports
+    SUCCESS even though nothing new was released. To release new commits,
+    use `railguey upload-source WORKSPACE SERVICE`.
+    """
     _output(_run(tools.deploy(workspace, service)))
 
 

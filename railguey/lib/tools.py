@@ -272,10 +272,13 @@ async def logs(
 
 
 async def deploy(workspace: str, service: str) -> dict:
-    """Trigger a deploy for a Railway service.
+    """Rebuild the service's existing source snapshot (serviceInstanceRedeploy).
 
-    Pure GraphQL — no CLI needed. Uses serviceInstanceRedeploy to rebuild
-    from the existing linked source (GitHub commit or previous upload).
+    Pure GraphQL — no CLI needed. WARNING: this does NOT ship new code. It
+    rebuilds whatever source the service already has (linked GitHub commit or
+    previous upload) and reports SUCCESS regardless. For releasing new
+    commits, use upload_source() instead. Confirmed the hard way on
+    djs-personal, 2026-07-15.
     """
     token = _load_token(workspace)
     project = await _resolve_project(token)
@@ -305,7 +308,15 @@ async def deploy(workspace: str, service: str) -> dict:
     )
     if "error" in result:
         return result
-    return {"deployed": True, "service": service}
+    return {
+        "deployed": True,
+        "service": service,
+        "warning": (
+            "Rebuilt the service's EXISTING source snapshot — new/local commits "
+            "were NOT shipped. To release new code: "
+            "railguey upload-source <workspace> <service>"
+        ),
+    }
 
 
 async def variables(workspace: str, service: str) -> dict:
