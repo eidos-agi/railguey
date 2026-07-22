@@ -37,6 +37,34 @@ class TestValidateToken:
             login_lib._validate_token(SPACE_TOKEN)
 
 
+class TestProjectTokensUrl:
+    def test_prefers_explicit_project_url(self):
+        url = login_lib.project_tokens_url(
+            project_url="https://railway.com/project/abc/settings/tokens"
+        )
+        assert url == "https://railway.com/project/abc/settings/tokens"
+
+    def test_builds_from_project_and_environment(self):
+        url = login_lib.project_tokens_url(
+            project_id="2f79ef64-0663-4dbd-8a36-dd1e0262092a",
+            environment_id="8b7fdf71-5e3c-4fd1-8f12-60983ff91148",
+        )
+        assert (
+            url
+            == "https://railway.com/project/2f79ef64-0663-4dbd-8a36-dd1e0262092a/settings/tokens?environmentId=8b7fdf71-5e3c-4fd1-8f12-60983ff91148"
+        )
+
+    def test_project_only_omits_env_query(self):
+        url = login_lib.project_tokens_url(project_id="abc-123")
+        assert url == "https://railway.com/project/abc-123/settings/tokens"
+        assert "environmentId" not in url
+
+    def test_fallback_is_docs_not_account_tokens(self):
+        url = login_lib.project_tokens_url()
+        assert "account/tokens" not in url
+        assert url == login_lib.PROJECT_TOKEN_DOC
+
+
 class TestEnsureGitignore:
     def test_no_gitignore_returns_false(self, workspace):
         assert login_lib._ensure_gitignore(workspace) is False
@@ -131,6 +159,37 @@ class TestLoginIntegration:
                 skip_validation=True,
             )
             assert opened.call_count == 0
+
+    def test_login_opens_project_tokens_url_not_account(self, workspace):
+        project_url = (
+            "https://railway.com/project/2f79ef64-0663-4dbd-8a36-dd1e0262092a"
+            "/settings/tokens?environmentId=8b7fdf71-5e3c-4fd1-8f12-60983ff91148"
+        )
+        with (
+            patch("railguey.lib.login.webbrowser.open") as opened,
+            patch(
+                "railguey.lib.login.popup.prompt_for_token",
+                return_value=type(
+                    "R",
+                    (),
+                    {
+                        "cancelled": True,
+                        "token": "",
+                        "token_name": "x",
+                        "push_to_github": False,
+                        "github_repo": "",
+                    },
+                )(),
+            ),
+        ):
+            login_lib.login(
+                workspace=str(workspace),
+                open_browser=True,
+                token=None,
+                project_url=project_url,
+            )
+            opened.assert_called_once_with(project_url)
+            assert "account/tokens" not in opened.call_args[0][0]
 
     def test_login_patches_gitignore_when_present(self, workspace):
         write_file(workspace / ".gitignore", "node_modules/\n")

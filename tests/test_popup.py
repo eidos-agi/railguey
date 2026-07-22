@@ -30,7 +30,7 @@ class TestTerminalPromptForToken:
         with patch("sys.stdin") as fake_stdin:
             fake_stdin.isatty.return_value = False
             r = popup._terminal_prompt_for_token(
-                railway_token_url="https://railway.app/account/tokens",
+                railway_token_url="https://railway.com/project/abc/settings/tokens",
                 default_token_name="gha-deploy",
                 suggested_github_repo=None,
             )
@@ -48,7 +48,7 @@ class TestTerminalPromptForToken:
         ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_prompt_for_token(
-                railway_token_url="https://railway.app/account/tokens",
+                railway_token_url="https://railway.com/project/abc/settings/tokens",
                 default_token_name="gha-deploy",
                 suggested_github_repo=None,
             )
@@ -68,7 +68,7 @@ class TestTerminalPromptForToken:
         ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_prompt_for_token(
-                railway_token_url="https://railway.app/account/tokens",
+                railway_token_url="https://railway.com/project/abc/settings/tokens",
                 default_token_name="gha-deploy",
                 suggested_github_repo=None,
             )
@@ -81,7 +81,7 @@ class TestTerminalPromptForToken:
         ):
             fake_stdin.isatty.return_value = True
             r = popup._terminal_prompt_for_token(
-                railway_token_url="https://railway.app/account/tokens",
+                railway_token_url="https://railway.com/project/abc/settings/tokens",
                 default_token_name="gha-deploy",
                 suggested_github_repo=None,
             )
@@ -164,7 +164,7 @@ class TestPromptDispatcher:
                 github_repo="",
                 cancelled=False,
             )
-            r = popup.prompt_for_token("https://railway.app/account/tokens")
+            r = popup.prompt_for_token("https://railway.com/project/abc/settings/tokens")
             assert fake.called
             assert r.token == "x" * 30
 

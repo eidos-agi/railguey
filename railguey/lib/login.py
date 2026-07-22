@@ -27,11 +27,68 @@ import webbrowser
 from pathlib import Path
 
 from railguey.lib import popup
-from railguey.lib.graphql import _resolve_project_metadata
+from railguey.lib.graphql import _gql_bearer, _resolve_project_metadata
 
-RAILWAY_TOKEN_PAGE = "https://railway.app/account/tokens"
-PROJECT_TOKEN_DOC = "https://docs.railway.com/reference/project#tokens"
+# Account tokens are WRONG for railguey deploys (Bearer vs Project-Access-Token).
+# Never open this as the default login destination.
+ACCOUNT_TOKEN_PAGE = "https://railway.com/account/tokens"
+# Docs for minting a project-scoped token (when we lack a project deep-link).
+PROJECT_TOKEN_DOC = "https://docs.railway.com/reference/public-api#project-token"
+# Deep-link template — project Settings → Tokens (Daniel 2026-07-22 footgun fix).
+PROJECT_TOKENS_URL = (
+    "https://railway.com/project/{project_id}/settings/tokens"
+    "?environmentId={environment_id}"
+)
+PROJECT_TOKENS_URL_NO_ENV = "https://railway.com/project/{project_id}/settings/tokens"
 TOKEN_LINE_PATTERN = re.compile(r"^RAILWAY_TOKEN\s*=.*$", re.MULTILINE)
+
+# Backward-compatible alias — historically pointed at account tokens (bug).
+# Callers should use project_tokens_url() or PROJECT_TOKEN_DOC.
+RAILWAY_TOKEN_PAGE = PROJECT_TOKEN_DOC
+
+
+def project_tokens_url(
+    project_id: str | None = None,
+    environment_id: str | None = None,
+    project_url: str | None = None,
+) -> str:
+    """URL where a human mints a **project** token for railguey.
+
+    Prefer an explicit project_url, then project_id (+ optional environmentId),
+    else the public docs (never the account tokens page).
+    """
+    if project_url:
+        return project_url.strip()
+    if project_id:
+        pid = project_id.strip()
+        if environment_id:
+            return PROJECT_TOKENS_URL.format(
+                project_id=pid, environment_id=environment_id.strip()
+            )
+        return PROJECT_TOKENS_URL_NO_ENV.format(project_id=pid)
+    return PROJECT_TOKEN_DOC
+
+
+def _account_token_hint(token: str) -> str | None:
+    """If this looks like an account token, return a short diagnostic.
+
+    Account tokens use Bearer and fail projectToken GraphQL — the footgun that
+    made railguey login open account/tokens and then reject the paste.
+    """
+    try:
+        result = asyncio.run(
+            _gql_bearer(token, "query { me { id email } }")
+        )
+    except Exception:
+        return None
+    if isinstance(result, dict) and result.get("me"):
+        return (
+            "That token looks like an **account** token (Bearer/me works). "
+            "railguey needs a **project** token from "
+            "Project → Settings → Tokens (Project-Access-Token), not "
+            f"{ACCOUNT_TOKEN_PAGE}."
+        )
+    return None
 
 
 def _validate_token(token: str) -> None:
@@ -171,16 +228,19 @@ def login(
     github_repo: str | None = None,
     use_popup: bool = True,
     skip_validation: bool = False,
+    project_id: str | None = None,
+    environment_id: str | None = None,
+    project_url: str | None = None,
 ) -> dict:
     """Bootstrap RAILWAY_TOKEN for a workspace.
 
     Default flow (interactive human use):
-      1. Open the Railway tokens page in the user's default browser.
+      1. Open the **project** tokens page (or docs) — never account tokens.
       2. Show a popup (Tk; falls back to terminal if Tk unavailable)
          with fields for the token, an editable token name, and an
          optional GitHub repo to also push the secret to.
       3. Validate the token by introspecting the project metadata
-         from Railway's GraphQL API.
+         from Railway's GraphQL API (Project-Access-Token).
       4. Show a second popup confirming project name, project ID,
          environment ID, team, and the local + GitHub destinations.
       5. On confirm, write to .env.local with 0600 perms, patch
@@ -192,7 +252,7 @@ def login(
 
     Args:
         workspace: path to the project directory that will host .env.local.
-        open_browser: if True (default), open the Railway tokens page so
+        open_browser: if True (default), open the project tokens URL so
             the user can mint a project token. Set False for headless use.
         token: optional pre-supplied token. If None (the secure default),
             prompts via popup or terminal.
@@ -204,10 +264,14 @@ def login(
             available. Set False to force terminal-only.
         skip_validation: if True, skip the Railway API round-trip used
             to fetch project metadata. Useful in tests and offline use.
+        project_id: Railway project UUID — deep-links browser to project Tokens.
+        environment_id: optional environment UUID for the Tokens URL query.
+        project_url: full Tokens page URL (overrides project_id/environment_id).
 
     Returns:
         Result dict with keys: workspace, env_file, gitignore_updated,
-        token_name, project (metadata), github_secret (if applicable).
+        token_name, project (metadata), github_secret (if applicable),
+        token_url (where the browser was pointed).
         Includes "error" on failure (CLI's _output() exits non-zero
         on that key).
     """
@@ -215,26 +279,37 @@ def login(
     if not ws.is_dir():
         return {"error": f"Workspace does not exist: {ws}"}
 
+    # Env fallbacks so agents/humans can export once per shell session.
+    project_id = project_id or os.environ.get("RAILWAY_PROJECT_ID")
+    environment_id = environment_id or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+    project_url = project_url or os.environ.get("RAILWAY_PROJECT_TOKENS_URL")
+
+    token_page = project_tokens_url(
+        project_id=project_id,
+        environment_id=environment_id,
+        project_url=project_url,
+    )
+
     if open_browser and token is None:
         try:
-            webbrowser.open(RAILWAY_TOKEN_PAGE)
+            webbrowser.open(token_page)
         except webbrowser.Error:
             pass
 
     detected_repo = _detect_github_repo(ws)
     suggested_repo = github_repo or detected_repo
-    token_name = "gha-deploy"
+    token_name = "railguey-project"
 
     if token is None:
         if use_popup:
             prompt = popup.prompt_for_token(
-                railway_token_url=RAILWAY_TOKEN_PAGE,
+                railway_token_url=token_page,
                 default_token_name=token_name,
                 suggested_github_repo=suggested_repo,
             )
         else:
             prompt = popup._terminal_prompt_for_token(
-                railway_token_url=RAILWAY_TOKEN_PAGE,
+                railway_token_url=token_page,
                 default_token_name=token_name,
                 suggested_github_repo=suggested_repo,
             )
@@ -261,12 +336,19 @@ def login(
         if "error" in project_meta:
             # Don't write a token we couldn't validate against Railway —
             # the whole point of confirmation is to catch bad pastes.
-            return {
-                "error": (
-                    f"Token failed to validate against Railway: "
-                    f"{project_meta.get('error')}. Nothing written."
+            err = project_meta.get("error")
+            hint = _account_token_hint(token)
+            msg = f"Token failed to validate against Railway: {err}. Nothing written."
+            if hint:
+                msg = f"{msg}\n\n{hint}"
+            else:
+                msg = (
+                    f"{msg}\n\n"
+                    "railguey needs a **project** token "
+                    "(Project → Settings → Tokens), not an account token "
+                    f"({ACCOUNT_TOKEN_PAGE})."
                 )
-            }
+            return {"error": msg, "token_url": token_page}
 
     if use_popup and not skip_validation and project_meta:
         confirm = popup.confirm_save(
@@ -289,6 +371,7 @@ def login(
         "gitignore_updated": gitignore_updated,
         "token_name": token_name,
         "project": project_meta if project_meta else None,
+        "token_url": token_page,
     }
 
     if github_repo:

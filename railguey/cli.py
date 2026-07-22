@@ -75,36 +75,48 @@ def main():
     is_flag=True,
     help="Skip the Railway API round-trip used to fetch + confirm project metadata.",
 )
-def login(workspace, no_browser, no_popup, token, github_repo, skip_validation):
-    """Bootstrap RAILWAY_TOKEN into WORKSPACE/.env.local.
+@click.option(
+    "--project-id",
+    default=None,
+    help="Railway project UUID — opens Project → Settings → Tokens (not account tokens).",
+)
+@click.option(
+    "--environment-id",
+    default=None,
+    help="Railway environment UUID (optional query param on the Tokens page).",
+)
+@click.option(
+    "--project-url",
+    default=None,
+    help="Full project Tokens page URL (overrides --project-id / --environment-id).",
+)
+def login(
+    workspace,
+    no_browser,
+    no_popup,
+    token,
+    github_repo,
+    skip_validation,
+    project_id,
+    environment_id,
+    project_url,
+):
+    """Bootstrap a **project** RAILWAY_TOKEN into WORKSPACE/.env.local.
 
     Default flow (interactive):
-      1. Opens the Railway tokens page in your default browser.
-      2. Shows an OS-agnostic Tk popup with editable fields:
-         - Token (masked input, never echoed)
-         - Token name (defaults to "gha-deploy", change as you like)
-         - Optional GitHub repo to also push the Actions secret to
-           (auto-detected from your git origin)
-      3. Validates the token by introspecting the project via Railway
-         GraphQL — a bad paste fails before anything is written.
-      4. Shows a second popup confirming the project name, project ID,
-         environment ID, team name, and the destinations about to be
-         written. Click Save to commit, Cancel to abort.
-
-    On systems without Tk (rare; minimal Docker images, headless CI)
-    the popup falls back to a terminal-based prompt with the same
-    semantics.
-
-    The token is piped to `gh secret set` via stdin if you opted into
-    the GitHub push — never passed on the command line, so it cannot
-    appear in `ps` output or any process inspection.
+      1. Opens the **project** Tokens page (or docs) — never account tokens.
+         Pass --project-id / --project-url so the browser lands correctly.
+      2. Tk popup: token (masked), token name, optional GitHub Actions secret.
+      3. Validates via GraphQL Project-Access-Token. Account tokens fail with a hint.
+      4. Confirm popup, then write .env.local (0600) and patch .gitignore.
 
     Examples:
         railguey login .
-        railguey login /path/to/repo
-        railguey login . --no-popup                      # terminal-only
-        railguey login . --no-browser --token "$X"       # CI / scripted
-        railguey login . --skip-validation               # offline / private network
+        railguey login . --project-id 2f79ef64-0663-4dbd-8a36-dd1e0262092a \\
+            --environment-id 8b7fdf71-5e3c-4fd1-8f12-60983ff91148
+        railguey login . --project-url 'https://railway.com/project/.../settings/tokens'
+        railguey login . --no-popup
+        railguey login . --no-browser --token "$PROJECT_TOKEN"
     """
     result = login_lib.login(
         workspace=workspace,
@@ -113,6 +125,9 @@ def login(workspace, no_browser, no_popup, token, github_repo, skip_validation):
         github_repo=github_repo,
         use_popup=not no_popup,
         skip_validation=skip_validation,
+        project_id=project_id,
+        environment_id=environment_id,
+        project_url=project_url,
     )
     _output(result)
 

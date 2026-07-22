@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.1 — `railguey login` opens **project** Tokens (not account tokens)
+
+- **Fixed**: `railguey login` no longer opens `railway.com/account/tokens`. Account tokens use Bearer auth and fail `projectToken` GraphQL validation — the footgun that rejected valid-looking pastes with "Token failed to validate… GraphQL error".
+- **Added**: `project_tokens_url()` + CLI flags `--project-id`, `--environment-id`, `--project-url` (and env `RAILWAY_PROJECT_ID` / `RAILWAY_ENVIRONMENT_ID` / `RAILWAY_PROJECT_TOKENS_URL`) so the browser deep-links to **Project → Settings → Tokens**.
+- **Added**: On validation failure, detect account tokens via Bearer `me` and print an explicit hint to mint a project token instead.
+- **Changed**: Default suggested token name is `railguey-project` (was `gha-deploy`).
+- **Tested**: URL builder + browser-open target tests in `tests/test_login.py`.
+
 ## v0.6.0 — `railguey research` (ask Railway's agent over SSH) + sibling-token discovery
 
 - **Added**: `railguey research "QUESTION"` — asks Railway's own AI agent via its `ssh railway.new` TUI and returns the answer as JSON. The chat session persists across calls (follow-ups keep context); `--reset` starts fresh, `--close` tears down, `--settle`/`--max-seconds` tune reply detection. Driven by `emux navigate` (model-picked keystrokes to reach the chat prompt) + `emux ask` (settle-based Q&A); requires `tmux`, `ssh`, and `emux` on PATH. The only railguey verb that needs no `RAILWAY_TOKEN`.

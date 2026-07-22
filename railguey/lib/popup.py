@@ -160,9 +160,9 @@ def _tk_prompt_for_token(
     ttk.Label(
         root,
         text=(
-            "1. Open the Railway dashboard (already opened in your browser).\n"
-            "2. Project → Settings → Tokens → Create Token.\n"
-            "3. Copy the token, then paste below."
+            "1. Browser should open the **project** Tokens page (not Account tokens).\n"
+            "2. Create Token → copy it (Project-Access-Token scope).\n"
+            "3. Paste below. Account tokens will fail validation on purpose."
         ),
         justify="left",
     ).grid(row=1, column=0, columnspan=2, sticky="w", **pad)
