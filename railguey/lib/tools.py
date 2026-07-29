@@ -1993,22 +1993,45 @@ async def volume_resize(
     if not environment_id:
         return {"error": "Could not resolve environmentId from token"}
 
+    # Railway's schema drifted: volumeInstanceUpdate now takes volumeId (the
+    # VOLUME id, not the instance id) plus environmentId — the old
+    # volumeInstanceId argument 400s with GRAPHQL_VALIDATION_FAILED. The
+    # parameter name is kept for CLI compat but either id is accepted: if the
+    # caller passed an instance id, resolve it to its parent volume.
+    volume_id = volume_instance_id
+    vols = await _gql(token, """
+    query project($id: String!) {
+      project(id: $id) { volumes { edges { node {
+        id
+        volumeInstances { edges { node { id } } }
+      } } } }
+    }
+    """, {"id": project.get("projectId")})
+    if isinstance(vols, dict) and "error" not in vols:
+        for edge in (vols.get("project", {}).get("volumes", {}).get("edges") or []):
+            node = edge["node"]
+            inst_ids = [e["node"]["id"] for e in (node.get("volumeInstances", {}).get("edges") or [])]
+            if volume_instance_id in inst_ids:
+                volume_id = node["id"]
+                break
+
     query = """
-    mutation volumeInstanceUpdate($volumeInstanceId: String!, $input: VolumeInstanceUpdateInput!) {
-      volumeInstanceUpdate(volumeInstanceId: $volumeInstanceId, input: $input)
+    mutation volumeInstanceUpdate($volumeId: String!, $environmentId: String, $input: VolumeInstanceUpdateInput!) {
+      volumeInstanceUpdate(volumeId: $volumeId, environmentId: $environmentId, input: $input)
     }
     """
     result = await _gql(
         token,
         query,
         {
-            "volumeInstanceId": volume_instance_id,
+            "volumeId": volume_id,
+            "environmentId": environment_id,
             "input": {"sizeMB": size_mb},
         },
     )
     if "error" in result:
         return result
-    return {"resized": True, "volumeInstanceId": volume_instance_id, "sizeMB": size_mb}
+    return {"resized": True, "volumeId": volume_id, "sizeMB": size_mb}
 
 
 BUCKET_REGIONS = {
