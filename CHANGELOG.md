@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.2 — volume-resize tracks Railway schema drift
+
+- **Fixed**: `volumeInstanceUpdate` no longer accepts `volumeInstanceId` — Railway's schema moved to `volumeId` (+ optional `environmentId`), so every resize 400'd with GRAPHQL_VALIDATION_FAILED. The CLI still takes an instance id and resolves it to its parent volume.
+- **Known limit**: Railway **refuses shrinks** ("Problem processing request" on 50000→5000 MB); grows should work. The real fix for oversized defaults is a `volume-create --size-mb` flag (not yet built) — `volume-create` currently always provisions 50 GB.
+
 ## v0.7.1 — the documented CI deploy pattern actually works
 
 - **Fixed**: `_load_project_token` now reads the `RAILWAY_TOKEN` **environment variable**. `examples/deploy.yml` — the pattern `railguey doctor` tells every repo to adopt — sets it as an env var, and nothing read it, so `railguey upload-source` in GitHub Actions always died with "No project-scoped Railway token found". The error message even claimed railguey "reads it from os.environ as a final fallback in some contexts". It did not. That text is now accurate.
