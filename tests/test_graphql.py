@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from railguey.lib import graphql as graphql_lib
 from railguey.lib.graphql import _gql, _resolve_project, _resolve_service_id
 from tests.helpers import (
     mock_httpx_response,
@@ -122,3 +123,24 @@ class TestResolveServiceId:
             mock.return_value = {"error": "Something broke"}
             result = await _resolve_service_id("token", "proj-abc", "web")
         assert result is None
+
+
+@pytest.mark.asyncio
+async def test_project_metadata_query_never_requests_team():
+    """Regression: `team { name }` is Not Authorized for a project token, and
+    GraphQL fails the whole query on one unauthorized field — which nulled
+    `project` and made login confirm against an unknown project name."""
+    seen = {}
+
+    async def fake_gql(token, query, variables=None):
+        if "projectToken" in query:
+            return {"projectToken": {"projectId": "p1", "environmentId": "e1"}}
+        seen["query"] = query
+        return {"project": {"id": "p1", "name": "northstar"}}
+
+    with patch("railguey.lib.graphql._gql", side_effect=fake_gql):
+        meta = await graphql_lib._resolve_project_metadata("tok-aaaaaaaaaaaaaaaaaaaaaa")
+
+    assert "team" not in seen["query"], "project-token query must not ask for team"
+    assert meta["projectName"] == "northstar"
+    assert meta["projectId"] == "p1"

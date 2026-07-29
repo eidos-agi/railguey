@@ -20,6 +20,8 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
+import json
 import os
 import re
 import subprocess
@@ -128,6 +130,48 @@ def _ensure_gitignore(workspace: Path) -> bool:
     new_content = content.rstrip() + "\n.env.local\n"
     gitignore.write_text(new_content)
     return True
+
+
+def _write_project_manifest(workspace: Path, project_meta: dict) -> Path | None:
+    """Write workspace/.railguey/project.json — the non-secret half of login.
+
+    The token goes to .env.local (0600, gitignored). This is everything else:
+    which Railway project/environment/team the workspace is bound to. That was
+    previously shown once in the confirmation popup and then discarded, leaving
+    the repo with no record of where it deploys — `railguey status` (a network
+    round-trip) was the only way to find out.
+
+    Committed on purpose. It contains no credentials.
+    """
+    if not project_meta or project_meta.get("error"):
+        return None
+    project_id = project_meta.get("projectId")
+    if not project_id:
+        return None
+
+    manifest = {
+        "schema_version": 1,
+        "project": project_meta.get("projectName"),
+        "project_id": project_id,
+        "environment_id": project_meta.get("environmentId"),
+        "team": project_meta.get("teamName"),
+        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "next_steps": [
+            "railguey service-bootstrap . <service>",
+            "railguey volume-create . <service> <mount-path>",
+            "railguey variable-set . <service> <KEY> <VALUE>",
+            "railguey logs . <service> --lines 200",
+        ],
+        "note": (
+            "Non-secret. The RAILWAY_TOKEN lives in .env.local (0600, gitignored). "
+            "Re-run `railguey login` to rebind this workspace to another project."
+        ),
+    }
+
+    path = workspace / ".railguey" / "project.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return path
 
 
 def _write_token(workspace: Path, token: str) -> Path:
@@ -364,10 +408,12 @@ def login(
 
     env_file = _write_token(ws, token)
     gitignore_updated = _ensure_gitignore(ws)
+    manifest = _write_project_manifest(ws, project_meta)
 
     result: dict = {
         "workspace": str(ws),
         "env_file": str(env_file),
+        "manifest": str(manifest) if manifest else None,
         "gitignore_updated": gitignore_updated,
         "token_name": token_name,
         "project": project_meta if project_meta else None,

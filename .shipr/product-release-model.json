@@ -1,0 +1,53 @@
+{
+  "approval_gates": [
+    "credentials",
+    "payments",
+    "production mutations",
+    "public publish/tag",
+    "customer/outbound messaging"
+  ],
+  "artifact_types": [
+    "docs",
+    "eidos-plugin",
+    "python-package"
+  ],
+  "description": "railguey \u2014 project-token-scoped Railway management CLI. Ships to PyPI (uvx/pip). Local 0.6.1 vs PyPI 0.3.1. Not itself deployed to Railway.",
+  "distribution_channels": [
+    "Eidos AGI marketplace",
+    "PyPI or uvx"
+  ],
+  "forge_stack": [
+    "forge-forge",
+    "ship-forge",
+    "security-forge",
+    "learning-forge",
+    "loss-forge"
+  ],
+  "learning_questions": [
+    "What broke or slowed this release?",
+    "What proof was missing until late?",
+    "Which gate should become automatic next time?",
+    "Which human approval should remain explicit?"
+  ],
+  "memory_paths": {
+    "attempts_dir": ".shipr/release-attempts",
+    "model": ".shipr/product-release-model.json"
+  },
+  "product_id": "railguey",
+  "project_root": "/Users/dshanklinbv/repos-eidos-agi/railguey",
+  "proof_commands": [
+    "python -m pytest -q",
+    "python -m ruff check .",
+    "python -m ruff format --check .",
+    "python tools/marketplace_publish.py check <plugin> --source <source-repo>",
+    "codex plugin list --marketplace eidos-agi",
+    "codex plugin add <plugin>@eidos-agi",
+    "verify README, changelog, and release notes match artifact version"
+  ],
+  "rollback_paths": [
+    "bump patch version and release a fixed package; yank only for severe package faults",
+    "remove or pin marketplace entry, then refresh plugin cache"
+  ],
+  "schema_version": 1,
+  "updated_at": "2026-07-29T03:47:13.468031+00:00"
+}

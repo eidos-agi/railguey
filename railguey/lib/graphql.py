@@ -106,12 +106,16 @@ async def _resolve_project_metadata(token: str) -> dict:
     if not project_id:
         return {"error": "projectToken returned no projectId"}
 
+    # Do NOT request `team { name }` here. A project token is Not Authorized for it,
+    # and GraphQL fails the WHOLE query on one unauthorized field — so asking for the
+    # team silently nulled `project`, and login confirmed against an unknown project
+    # name. Project tokens are the only kind railguey accepts, so teamName was never
+    # obtainable on this path; it stays None rather than costing a second round-trip.
     query = """
     query project($id: String!) {
       project(id: $id) {
         id
         name
-        team { name }
       }
     }
     """
@@ -121,7 +125,7 @@ async def _resolve_project_metadata(token: str) -> dict:
         "projectId": project_id,
         "environmentId": base.get("environmentId"),
         "projectName": (project or {}).get("name"),
-        "teamName": ((project or {}).get("team") or {}).get("name"),
+        "teamName": None,
     }
 
 

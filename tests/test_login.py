@@ -253,3 +253,46 @@ class TestGitHubSecretPush:
         assert "error" not in result
         assert result["github_secret"]["ok"] is False
         assert "gh CLI not installed" in result["github_secret"]["error"]
+
+
+# --- .railguey/project.json manifest ---------------------------------------
+
+
+def _meta(**over):
+    base = {
+        "projectId": "d6cf7991-09ea-4e86-abd7-20a370b3e764",
+        "environmentId": "env-123",
+        "projectName": "northstar",
+        "teamName": "AIC Holdings",
+    }
+    base.update(over)
+    return base
+
+
+def test_manifest_records_project_binding(tmp_path):
+    import json
+
+    path = login_lib._write_project_manifest(tmp_path, _meta())
+
+    assert path == tmp_path / ".railguey" / "project.json"
+    data = json.loads(path.read_text())
+    assert data["project"] == "northstar"
+    assert data["project_id"] == "d6cf7991-09ea-4e86-abd7-20a370b3e764"
+    assert data["environment_id"] == "env-123"
+    assert data["team"] == "AIC Holdings"
+    assert data["next_steps"]
+
+
+def test_manifest_never_contains_the_token(tmp_path):
+    # The failure that matters: this file is committed, .env.local is not.
+    token = "c6acc2-super-secret-project-token-value"
+    path = login_lib._write_project_manifest(tmp_path, _meta(token=token))
+    assert token not in path.read_text()
+
+
+def test_manifest_skipped_when_metadata_unresolved(tmp_path):
+    # skip_validation / offline: better no manifest than a manifest full of nulls.
+    assert login_lib._write_project_manifest(tmp_path, {}) is None
+    assert login_lib._write_project_manifest(tmp_path, {"error": "boom"}) is None
+    assert login_lib._write_project_manifest(tmp_path, _meta(projectId=None)) is None
+    assert not (tmp_path / ".railguey").exists()
