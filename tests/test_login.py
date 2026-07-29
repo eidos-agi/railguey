@@ -296,3 +296,38 @@ def test_manifest_skipped_when_metadata_unresolved(tmp_path):
     assert login_lib._write_project_manifest(tmp_path, {"error": "boom"}) is None
     assert login_lib._write_project_manifest(tmp_path, _meta(projectId=None)) is None
     assert not (tmp_path / ".railguey").exists()
+
+
+# --- CI: RAILWAY_TOKEN from the environment --------------------------------
+
+
+def test_env_token_used_when_workspace_has_no_env_file(tmp_path, monkeypatch):
+    """examples/deploy.yml sets RAILWAY_TOKEN as an env var; nothing read it,
+    so the documented GitHub Actions deploy could never authenticate."""
+    from railguey.lib.token import _load_project_token
+
+    monkeypatch.setenv("RAILWAY_TOKEN", "env-token-value")
+    isolated = tmp_path / "parent" / "ws"
+    isolated.mkdir(parents=True)
+    assert _load_project_token(str(isolated)) == "env-token-value"
+
+
+def test_workspace_env_file_beats_environment(tmp_path, monkeypatch):
+    from railguey.lib.token import _load_project_token
+
+    monkeypatch.setenv("RAILWAY_TOKEN", "env-token-value")
+    ws = tmp_path / "parent" / "ws"
+    ws.mkdir(parents=True)
+    (ws / ".env.local").write_text("RAILWAY_TOKEN=file-token-value\n")
+    assert _load_project_token(str(ws)) == "file-token-value"
+
+
+def test_blank_env_token_is_not_used(tmp_path, monkeypatch):
+    # An unset GitHub secret expands to "" — that must not read as a token.
+    from railguey.lib.token import _load_project_token
+
+    monkeypatch.setenv("RAILWAY_TOKEN", "   ")
+    isolated = tmp_path / "parent" / "ws"
+    isolated.mkdir(parents=True)
+    with pytest.raises(ValueError):
+        _load_project_token(str(isolated))

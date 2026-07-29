@@ -1,5 +1,6 @@
-"""Token discovery from workspace .env files."""
+"""Token discovery from workspace .env files, then the environment."""
 
+import os
 from collections import Counter
 from pathlib import Path
 
@@ -93,6 +94,15 @@ def _load_project_token(workspace: str) -> str:
                 if value:
                     return value
 
+    # CI: an explicit RAILWAY_TOKEN in the environment. This is what
+    # examples/deploy.yml has always told people to set, and until now nothing
+    # read it — the documented GitHub Actions pattern could not work. Checked
+    # before the sibling scan because an explicit env var beats a heuristic,
+    # and after the workspace files so a checked-out .env.local still wins.
+    env_value = os.environ.get("RAILWAY_TOKEN", "").strip()
+    if env_value:
+        return env_value
+
     # Fallback: scan sibling repos. If ≥2 share the same RAILWAY_TOKEN value,
     # write it into this workspace's .env.local and return it. This is the
     # AI-friendly path — a fresh workspace inherits the project's token
@@ -115,9 +125,8 @@ def _load_project_token(workspace: str) -> str:
         f"via browser + Tk popup. Paste a project token from the Railway "
         f"dashboard; railguey validates it against Railway's GraphQL "
         f"before writing.\n"
-        f"  3. CI environment: set the RAILWAY_TOKEN env var explicitly "
-        f"(railguey reads it from os.environ as a final fallback in some "
-        f"contexts; check the calling verb's docs)."
+        f"  3. CI: set the RAILWAY_TOKEN env var (see examples/deploy.yml). "
+        f"It is read after workspace .env files and before sibling discovery."
     )
 
 
