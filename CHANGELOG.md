@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.1 — the documented CI deploy pattern actually works
+
+- **Fixed**: `_load_project_token` now reads the `RAILWAY_TOKEN` **environment variable**. `examples/deploy.yml` — the pattern `railguey doctor` tells every repo to adopt — sets it as an env var, and nothing read it, so `railguey upload-source` in GitHub Actions always died with "No project-scoped Railway token found". The error message even claimed railguey "reads it from os.environ as a final fallback in some contexts". It did not. That text is now accurate.
+- **Precedence**: workspace `.env.local` / `.env` → environment → sibling discovery. Env beats the sibling heuristic because it's explicit; workspace files still win so a checked-out token isn't overridden. A blank env var (an unset GitHub secret expands to `""`) is not treated as a token.
+- **Tested**: 3 new tests — env used when the workspace has no env file, workspace file beats environment, blank env var rejected.
+- **Found by**: the first real CI deploy of `aic-holdings/northstar-job-scheduler`.
+
+## v0.7.0 — `.railguey/project.json` + login resolves the project name again
+
+- **Fixed**: `railguey login` confirmed against an **unknown project name**. `_resolve_project_metadata` requested `team { name }`; a project token is `Not Authorized` for that field, and GraphQL fails the *whole* query on one unauthorized field — so `project` came back null and `projectName` with it. Proven live: the same token, same query minus `team`, returns the name. Project tokens are the only kind railguey accepts, so `teamName` was never obtainable on this path; it's now explicitly `None` rather than costing a second round-trip.
+- **Added**: `railguey login` writes `.railguey/project.json` — the non-secret half of the binding (project, project_id, environment_id, next steps). Commit it; the token stays in `.env.local` at 0600. Previously that metadata was shown once in the popup and discarded, leaving a repo with no record of where it deploys.
+- **Tested**: 4 new tests — manifest contents, never contains the token, skipped when metadata is unresolved, and a regression asserting the project query never asks for `team`.
+
 ## v0.6.1 — `railguey login` opens **project** Tokens (not account tokens)
 
 - **Fixed**: `railguey login` no longer opens `railway.com/account/tokens`. Account tokens use Bearer auth and fail `projectToken` GraphQL validation — the footgun that rejected valid-looking pastes with "Token failed to validate… GraphQL error".

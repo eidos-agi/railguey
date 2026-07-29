@@ -242,11 +242,44 @@ Set `RAILWAY_SERVICE` as a [repository variable](https://docs.github.com/en/acti
 
 ## Token discovery
 
-1. Looks for `RAILWAY_TOKEN=` in `{workspace}/.env.local`
-2. Falls back to `{workspace}/.env`
-3. Raises a clear error if not found
+1. `RAILWAY_TOKEN=` in `{workspace}/.env.local`
+2. `{workspace}/.env`
+3. **The `RAILWAY_TOKEN` environment variable** — this is the CI path, and what
+   `examples/deploy.yml` sets
+4. Sibling-repo discovery (≥2 siblings must agree — see v0.6.0)
+5. Raises a clear error if not found
+
+Workspace files win over the environment, so a checked-out token isn't overridden.
+The environment beats sibling discovery, because an explicit value should beat a
+heuristic. A blank env var (an unset GitHub secret expands to `""`) is not treated
+as a token.
 
 Supports bare values, single-quoted, and double-quoted values.
+
+## `.railguey/project.json`
+
+`railguey login` writes a **non-secret** manifest recording which Railway project
+the workspace is bound to. Commit it — the token stays in `.env.local` (0600,
+gitignored).
+
+```json
+{
+  "schema_version": 1,
+  "project": "northstar",
+  "project_id": "d6cf7991-…",
+  "environment_id": "5491e864-…",
+  "team": null,
+  "next_steps": ["railguey service-bootstrap . <service>", "…"]
+}
+```
+
+Before this, that metadata was shown once in the login confirmation popup and then
+discarded, so `railguey status` — a network round-trip — was the only way to find
+out where a repo deploys.
+
+`team` is always `null` on this path: a project token is `Not Authorized` for
+Railway's `project.team` field, and asking for it fails the *entire* GraphQL query
+(which is what used to null out the project **name** too).
 
 ## License
 
