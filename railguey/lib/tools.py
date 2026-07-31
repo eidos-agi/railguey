@@ -397,6 +397,99 @@ async def variable_set(workspace: str, service: str, key: str, value: str) -> di
     return {"set": True, "key": key, "service": service}
 
 
+async def app_create(
+    workspace: str,
+    name: str,
+    repo: str,
+    variables: Optional[dict] = None,
+    volume_path: Optional[str] = None,
+    branch: Optional[str] = None,
+) -> dict:
+    """Create an app service from a GitHub repo source (native app deploy).
+
+    Companion to db_create: serviceCreate from a GitHub repo (Railway builds via
+    Nixpacks/Dockerfile), sets the given variables, optionally attaches a durable
+    volume (e.g. for uploaded media), and mints a public domain. The repo must be
+    reachable by Railway's GitHub app for the build to succeed. Project-token-only.
+    Values may use Railway references, e.g. GREENSTACK_DATABASE_URL =
+    "${{greenstack-db.DATABASE_URL}}" to wire the private DB URL without copying
+    the secret.
+    """
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    source: dict = {"repo": repo}
+    if branch:
+        source["branch"] = branch
+    created = await _gql(
+        token,
+        """
+        mutation serviceCreate($input: ServiceCreateInput!) {
+          serviceCreate(input: $input) { id name }
+        }
+        """,
+        {
+            "input": {
+                "name": name,
+                "projectId": project_id,
+                "environmentId": environment_id,
+                "source": source,
+                "variables": variables or {},
+            }
+        },
+    )
+    if "error" in created or not created.get("serviceCreate"):
+        return {"error": "serviceCreate failed", "detail": created}
+    service_id = created["serviceCreate"]["id"]
+
+    volume_id = ""
+    if volume_path:
+        vol = await _gql(
+            token,
+            "mutation volumeCreate($input: VolumeCreateInput!) { volumeCreate(input: $input) { id } }",
+            {
+                "input": {
+                    "projectId": project_id,
+                    "environmentId": environment_id,
+                    "serviceId": service_id,
+                    "mountPath": volume_path,
+                }
+            },
+        )
+        volume_id = (vol.get("volumeCreate") or {}).get("id", "") if "error" not in vol else ""
+
+    dom = await _gql(
+        token,
+        "mutation serviceDomainCreate($input: ServiceDomainCreateInput!) {"
+        " serviceDomainCreate(input: $input) { domain } }",
+        {"input": {"environmentId": environment_id, "serviceId": service_id}},
+    )
+    domain = (dom.get("serviceDomainCreate") or {}).get("domain", "") if "error" not in dom else ""
+
+    return {
+        "created": True,
+        "service": name,
+        "serviceId": service_id,
+        "repo": repo,
+        "branch": branch or "(default)",
+        "volumeId": volume_id,
+        "volumePath": volume_path or None,
+        "domain": domain,
+        "variables": sorted((variables or {}).keys()),
+        "note": (
+            "Railway is building from the repo (~1-3 min). Watch with "
+            f"`railguey logs {workspace} {name}`; the domain serves once the first "
+            "deploy is healthy. Reference values (${{...}}) resolve at runtime."
+        ),
+    }
+
+
 async def services(workspace: str) -> dict:
     """List all services in the Railway project with deployment status.
 

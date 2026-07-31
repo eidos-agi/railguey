@@ -291,6 +291,29 @@ def db_create(workspace, name, database, db_user):
     _output(_run(tools.db_create(workspace, name, database, db_user)))
 
 
+@main.command("app-create")
+@click.argument("workspace")
+@click.argument("name")
+@click.option("--repo", required=True, help="GitHub repo source, e.g. owner/name")
+@click.option("--branch", default=None, help="branch to deploy (default: repo default)")
+@click.option("--volume", "volume_path", default=None, help="mount path for a durable volume, e.g. /app/media")
+@click.option("--var", "vars_", multiple=True, help="service variable KEY=VALUE (repeatable). Values may use Railway refs like ${{db.DATABASE_URL}}")
+def app_create(workspace, name, repo, branch, volume_path, vars_):
+    """Create an app service from a GitHub repo (build + variables + volume + domain).
+
+    Companion to db-create: Railway builds the repo (Nixpacks/Dockerfile), sets the
+    given variables, optionally attaches a durable volume, and mints a public domain.
+    Project-token-only; the repo must be reachable by Railway's GitHub app.
+    """
+    variables = {}
+    for pair in vars_:
+        if "=" not in pair:
+            raise click.BadParameter("--var must be KEY=VALUE: %r" % pair)
+        k, v = pair.split("=", 1)
+        variables[k] = v
+    _output(_run(tools.app_create(workspace, name, repo, variables, volume_path, branch)))
+
+
 @main.command()
 @click.argument("workspace")
 def volumes(workspace):
