@@ -275,6 +275,22 @@ def volume_create(workspace, service, mount_path):
     _output(_run(tools.volume_create(workspace, service, mount_path)))
 
 
+@main.command("db-create")
+@click.argument("workspace")
+@click.argument("name")
+@click.option("--database", default="railway", help="database name (default: railway)")
+@click.option("--user", "db_user", default="postgres", help="db user (default: postgres)")
+def db_create(workspace, name, database, db_user):
+    """Provision a managed PostgreSQL service (image + volume + TCP proxy).
+
+    Native DB setup: creates a Postgres service, a durable volume, and a public
+    TCP proxy; stores DATABASE_URL + DATABASE_PUBLIC_URL as service variables.
+    Read the connection with `railguey variables WORKSPACE NAME` — the secret is
+    never printed here. Project-token-only.
+    """
+    _output(_run(tools.db_create(workspace, name, database, db_user)))
+
+
 @main.command()
 @click.argument("workspace")
 def volumes(workspace):

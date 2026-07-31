@@ -1893,6 +1893,132 @@ async def volume_create(
     }
 
 
+async def db_create(
+    workspace: str,
+    name: str,
+    database: str = "railway",
+    db_user: str = "postgres",
+    image: str = "ghcr.io/railwayapp-templates/postgres-ssl:16",
+) -> dict:
+    """Provision a managed PostgreSQL service in one call (native DB setup).
+
+    Creates a Postgres service from the Railway postgres-ssl image with a
+    generated password + PGDATA, attaches a durable volume at
+    /var/lib/postgresql/data, and opens a public TCP proxy so the DB is
+    reachable for external migrations. Stores DATABASE_URL (private) and
+    DATABASE_PUBLIC_URL (proxy) as service variables so project services and
+    `railguey variables` can read the connection — the secret never appears in
+    this function's output. Project-token-only.
+    """
+    import secrets
+
+    token = _load_token(workspace)
+    project = await _resolve_project(token)
+    if "error" in project:
+        return project
+    project_id = project.get("projectId")
+    environment_id = project.get("environmentId")
+    if not project_id or not environment_id:
+        return {"error": "Could not resolve projectId/environmentId from token"}
+
+    password = secrets.token_urlsafe(24)
+
+    created = await _gql(
+        token,
+        """
+        mutation serviceCreate($input: ServiceCreateInput!) {
+          serviceCreate(input: $input) { id name }
+        }
+        """,
+        {
+            "input": {
+                "name": name,
+                "projectId": project_id,
+                "environmentId": environment_id,
+                "source": {"image": image},
+                "variables": {
+                    "POSTGRES_USER": db_user,
+                    "POSTGRES_PASSWORD": password,
+                    "POSTGRES_DB": database,
+                    "PGDATA": "/var/lib/postgresql/data/pgdata",
+                },
+            }
+        },
+    )
+    if "error" in created or not created.get("serviceCreate"):
+        return {"error": "serviceCreate failed", "detail": created}
+    service_id = created["serviceCreate"]["id"]
+
+    vol = await _gql(
+        token,
+        """
+        mutation volumeCreate($input: VolumeCreateInput!) {
+          volumeCreate(input: $input) { id name }
+        }
+        """,
+        {
+            "input": {
+                "projectId": project_id,
+                "environmentId": environment_id,
+                "serviceId": service_id,
+                "mountPath": "/var/lib/postgresql/data",
+            }
+        },
+    )
+    volume_id = (vol.get("volumeCreate") or {}).get("id", "") if "error" not in vol else ""
+
+    proxy_res = await _gql(
+        token,
+        """
+        mutation tcpProxyCreate($input: TCPProxyCreateInput!) {
+          tcpProxyCreate(input: $input) { id domain applicationPort proxyPort }
+        }
+        """,
+        {"input": {"environmentId": environment_id, "serviceId": service_id, "applicationPort": 5432}},
+    )
+    proxy = (proxy_res.get("tcpProxyCreate") or {}) if "error" not in proxy_res else {}
+
+    private_host = f"{name}.railway.internal"
+    private_url = f"postgresql://{db_user}:{password}@{private_host}:5432/{database}"
+
+    async def _setvar(key: str, value: str) -> None:
+        await _gql(
+            token,
+            "mutation variableUpsert($input: VariableUpsertInput!) { variableUpsert(input: $input) }",
+            {
+                "input": {
+                    "projectId": project_id,
+                    "environmentId": environment_id,
+                    "serviceId": service_id,
+                    "name": key,
+                    "value": value,
+                }
+            },
+        )
+
+    await _setvar("DATABASE_URL", private_url)
+    if proxy.get("domain") and proxy.get("proxyPort"):
+        public_url = f"postgresql://{db_user}:{password}@{proxy['domain']}:{proxy['proxyPort']}/{database}"
+        await _setvar("DATABASE_PUBLIC_URL", public_url)
+
+    return {
+        "created": True,
+        "service": name,
+        "serviceId": service_id,
+        "image": image,
+        "database": database,
+        "user": db_user,
+        "volumeId": volume_id,
+        "privateHost": private_host,
+        "proxy": {"domain": proxy.get("domain", ""), "port": proxy.get("proxyPort")},
+        "connectionVars": ["DATABASE_URL (private)", "DATABASE_PUBLIC_URL (proxy)"],
+        "note": (
+            f"Postgres initializing (~30-60s). Read the connection with "
+            f"`railguey variables {workspace} {name}` — never printed here."
+        ),
+    }
+
+
 async def volumes(workspace: str) -> dict:
     """List all volumes in the Railway project with their mount state.
 
