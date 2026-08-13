@@ -37,16 +37,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
+          go-version: "1.24.x"
 
-      - name: Install railguey
-        run: pip install railguey
+      - name: Build railguey
+        run: |
+          git clone --depth 1 https://github.com/eidos-agi/railguey.git "$RUNNER_TEMP/railguey-source"
+          go build -C "$RUNNER_TEMP/railguey-source" -o "$RUNNER_TEMP/railguey" ./cmd/railguey
 
       - name: Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
-        run: railguey upload-source "$GITHUB_WORKSPACE" "$RAILWAY_SERVICE" --message "$GITHUB_SHA"
+        run: >-
+          "$RUNNER_TEMP/railguey" upload-source "$GITHUB_WORKSPACE" "$RAILWAY_SERVICE" --message "$GITHUB_SHA"

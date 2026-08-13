@@ -1,4 +1,7 @@
-# Plan: Publish railguey to PyPI
+# Historical Python release plan
+
+Railguey now releases Go binaries through GitHub Releases. This document is
+retained only as history for the frozen Python implementation.
 
 ## Prerequisites
 

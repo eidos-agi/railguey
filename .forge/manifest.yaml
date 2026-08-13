@@ -10,15 +10,10 @@ repo:
   topics: [railway, cli, deploy, devops, ci-cd, github-actions]
 
 packaging:
-  build_system: hatchling
-  pypi:
-    name: railguey
-    publish: true
-    trusted_publisher:
-      owner: eidos-agi
-      repo: railguey
-      workflow: publish.yml
-      environment: pypi
+  build_system: go
+  github_release:
+    binaries: [darwin-arm64, darwin-amd64, linux-amd64, linux-arm64]
+    workflow: publish.yml
   readme:
     absolute_images: true
 
