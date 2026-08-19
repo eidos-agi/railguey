@@ -601,13 +601,14 @@ class TestDomain:
         assert input_vars["domain"] == "web-abc.up.railway.app"
 
     async def test_update_existing_custom_domain_port(self, workspace_with_token):
-        """Existing custom domain + port => update targetPort via Bearer auth."""
+        """Existing custom domain + port => flat-args mutation via project token."""
         with (
             _patch_project(),
             _patch_service_id(),
-            _patch_gql(EXISTING_CUSTOM_DOMAIN),
-            _patch_user_token(),
-            _patch_gql_bearer({"customDomainUpdate": True}) as mock_bearer,
+            _patch_gql(
+                EXISTING_CUSTOM_DOMAIN,
+                {"customDomainUpdate": True},
+            ) as mock_gql,
         ):
             result = await domain(
                 str(workspace_with_token), "web", domain="api.example.com", port=3000
@@ -616,9 +617,11 @@ class TestDomain:
         assert result["targetPort"] == 3000
         assert result["domain"] == "api.example.com"
         assert result["custom"] is True
-        # Verify customDomainId was used (not serviceDomainId)
-        input_vars = mock_bearer.call_args[0][2]["input"]
-        assert input_vars["customDomainId"] == "cd-1"
+        # Flat args (Railway dropped CustomDomainUpdateInput), project token auth
+        gql_vars = mock_gql.call_args[0][2]
+        assert gql_vars["id"] == "cd-1"
+        assert gql_vars["targetPort"] == 3000
+        assert gql_vars["environmentId"]
 
     async def test_existing_domain_no_port_returns_info(self, workspace_with_token):
         """Existing domain + no port => just return existing domain info."""

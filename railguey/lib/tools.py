@@ -663,6 +663,7 @@ async def domain(
             }
         # Update the target port on the existing domain
         return await _update_domain_port(
+            token,
             existing,
             service_id,
             environment_id,
@@ -781,39 +782,45 @@ async def _find_existing_domain(
 
 
 async def _update_domain_port(
+    token: str,
     existing: dict,
     service_id: str,
     environment_id: str,
     service_name: str,
     port: int,
 ) -> dict:
-    """Update the targetPort on an existing domain. Requires Bearer auth."""
-    try:
-        user_token = _load_user_token()
-    except ValueError:
-        return {
-            "error": (
-                "Updating a domain's targetPort requires a Bearer (account) token, "
-                "but no account is registered. Project tokens cannot execute this mutation. "
-                "Register a Railway account token in ~/.railguey/accounts.json "
-                "with access to this workspace."
-            )
-        }
+    """Update the targetPort on an existing domain.
 
+    Custom domains use the flat-args customDomainUpdate mutation (Railway
+    dropped CustomDomainUpdateInput) and work with the project token.
+    Service domains still go through Bearer + ServiceDomainUpdateInput.
+    """
     if existing["custom"]:
         query = """
-        mutation customDomainUpdate($input: CustomDomainUpdateInput!) {
-          customDomainUpdate(input: $input)
+        mutation customDomainUpdate($id: String!, $environmentId: String!, $targetPort: Int!) {
+          customDomainUpdate(id: $id, environmentId: $environmentId, targetPort: $targetPort)
         }
         """
-        input_vars = {
-            "customDomainId": existing["id"],
-            "serviceId": service_id,
-            "environmentId": environment_id,
-            "domain": existing["domain"],
-            "targetPort": port,
-        }
+        result = await _gql(
+            token,
+            query,
+            {
+                "id": existing["id"],
+                "environmentId": environment_id,
+                "targetPort": port,
+            },
+        )
     else:
+        try:
+            user_token = _load_user_token()
+        except ValueError:
+            return {
+                "error": (
+                    "Updating a service domain's targetPort requires a Bearer (account) "
+                    "token, but no account is registered. Register a Railway account "
+                    "token in ~/.railguey/accounts.json with access to this workspace."
+                )
+            }
         query = """
         mutation serviceDomainUpdate($input: ServiceDomainUpdateInput!) {
           serviceDomainUpdate(input: $input)
@@ -826,8 +833,7 @@ async def _update_domain_port(
             "domain": existing["domain"],
             "targetPort": port,
         }
-
-    result = await _gql_bearer(user_token, query, {"input": input_vars})
+        result = await _gql_bearer(user_token, query, {"input": input_vars})
     if "error" in result:
         return result
 
