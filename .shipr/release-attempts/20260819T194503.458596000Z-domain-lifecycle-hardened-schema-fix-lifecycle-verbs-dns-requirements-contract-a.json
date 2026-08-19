@@ -1,0 +1,65 @@
+{
+  "blocker_records": [],
+  "blockers": [],
+  "created_at": "2026-08-19T19:45:03.458633Z",
+  "gate_summary": [],
+  "goal": "Domain lifecycle hardened: schema fix, lifecycle verbs, dns_requirements contract, auto-nudge, edge TLS verification",
+  "learning_prompts": [
+    "What broke or slowed this release?",
+    "What proof was missing until late?",
+    "Which gate should become automatic next time?",
+    "Which human approval should remain explicit?"
+  ],
+  "next_actions": [
+    "route lessons to learning-forge",
+    "watch rollback and support signals"
+  ],
+  "notes": "Four commits on main (2e9f4b9, edcfd0b, 9f1921b, 2d71feb) from the prim.eidosagi.com saga 2026-08-19. Doctrine encoded: trust the handshake, not the API — 'issued' now requires a fresh SNI handshake serving a cert that covers the domain; doctor handshakes every custom domain. dns_requirements v1 contract (DNS-CONTRACT.md) includes the verification TXT Railway's dnsRecords API hides. Verdict recorded: keep Railway BECAUSE railguey wraps its hidden state in contracts.",
+  "product_id": "railguey",
+  "proofs": [
+    "89 tests green (test_domains_lifecycle + test_tools)",
+    "live: railguey domain-status . prim-web -\u003e state=issued, edge matches, 89d validity",
+    "live: doctor 'Custom domain TLS' pass for prim.eidosagi.com AND live.eidosagi.com"
+  ],
+  "release_model_snapshot": {
+    "approval_gates": [
+      "credentials",
+      "payments",
+      "production mutations",
+      "public publish/tag",
+      "customer/outbound messaging"
+    ],
+    "artifact_types": [
+      "docs",
+      "eidos-plugin",
+      "python-package"
+    ],
+    "distribution_channels": [
+      "Eidos AGI marketplace",
+      "PyPI or uvx"
+    ],
+    "forge_stack": [
+      "forge-forge",
+      "ship-forge",
+      "security-forge",
+      "learning-forge",
+      "loss-forge"
+    ],
+    "license": null,
+    "open_source_status": null,
+    "proof_commands": [
+      "python -m pytest -q",
+      "python -m ruff check .",
+      "python -m ruff format --check .",
+      "python tools/marketplace_publish.py check \u003cplugin\u003e --source \u003csource-repo\u003e",
+      "codex plugin list --marketplace eidos-agi",
+      "codex plugin add \u003cplugin\u003e@eidos-agi",
+      "verify README, changelog, and release notes match artifact version"
+    ],
+    "proof_source": null,
+    "repository_visibility": null
+  },
+  "schema_version": 1,
+  "source": null,
+  "status": "shipped"
+}
