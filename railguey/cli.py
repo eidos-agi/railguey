@@ -215,6 +215,40 @@ def domain(workspace, service, custom_domain, port):
     _output(_run(tools.domain(workspace, service, custom_domain, port)))
 
 
+@main.command()
+@click.argument("workspace")
+@click.argument("service")
+def domains(workspace, service):
+    """List all domains on a service with certificate + DNS state."""
+    from railguey.lib import domains as domain_tools
+
+    _output(_run(domain_tools.domains_list(workspace, service)))
+
+
+@main.command("domain-status")
+@click.argument("workspace")
+@click.argument("service")
+@click.option("--domain", "domain_str", default=None, help="Domain to check (default: first custom domain).")
+@click.option("--wait", default=0, type=int, help="Poll up to N seconds until the certificate is issued or fails.")
+@click.option("--interval", default=15, type=int, help="Seconds between polls when --wait is set.")
+def domain_status(workspace, service, domain_str, wait, interval):
+    """Show (or await) a domain's certificate and DNS record state."""
+    from railguey.lib import domains as domain_tools
+
+    _output(_run(domain_tools.domain_status(workspace, service, domain_str, wait, interval)))
+
+
+@main.command("domain-delete")
+@click.argument("workspace")
+@click.argument("service")
+@click.argument("domain_str", metavar="DOMAIN")
+def domain_delete(workspace, service, domain_str):
+    """Delete a domain (custom or generated) from a service by name."""
+    from railguey.lib import domains as domain_tools
+
+    _output(_run(domain_tools.domain_delete(workspace, service, domain_str)))
+
+
 @main.command("environment-create")
 @click.argument("workspace")
 @click.argument("name")

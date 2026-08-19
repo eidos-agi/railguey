@@ -977,7 +977,13 @@ async def service_info(workspace: str, service: str) -> dict:
     )
     if "error" in result:
         return result
-    return result.get("serviceInstance", {})
+    instance = result.get("serviceInstance", {})
+    if instance:
+        # The GraphQL "id" here is the service INSTANCE id, not the service id
+        # consumers pass to other verbs — surface both, unambiguously.
+        instance["instanceId"] = instance.pop("id", None)
+        instance["serviceId"] = service_id
+    return instance
 
 
 async def http_logs(
