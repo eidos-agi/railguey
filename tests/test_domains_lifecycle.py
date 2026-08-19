@@ -196,3 +196,31 @@ async def test_delete_missing_domain_errors():
     with _patch_ctx(), _patch_gql(_domains_resp([], [])):
         result = await domain_delete(".", "web", "ghost.example.com")
     assert "error" in result
+
+
+async def test_wait_nudges_stuck_verification_once():
+    """Pending + verified=False during --wait fires customDomainIssueCertificate
+    exactly once (Railway does not reliably re-check on its own)."""
+    unverified = {
+        **_CUSTOM_VALIDATING,
+        "status": {
+            **_CUSTOM_VALIDATING["status"],
+            "verified": False,
+            "verificationDnsHost": "_railway-verify.prim",
+            "verificationToken": "railway-verify=tok123",
+        },
+    }
+    with (
+        _patch_ctx(),
+        _patch_gql(
+            _domains_resp([unverified], []),
+            {"customDomainIssueCertificate": True},
+            _domains_resp([_CUSTOM_VALID], []),
+        ) as mock_gql,
+        patch("railguey.lib.domains.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await domain_status(".", "web", wait=60, interval=1)
+    assert result["state"] == "issued"
+    mutations = [c for c in mock_gql.call_args_list if "IssueCertificate" in c[0][1]]
+    assert len(mutations) == 1
+    assert mutations[0][0][2] == {"id": "cd-1"}

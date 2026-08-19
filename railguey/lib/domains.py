@@ -189,6 +189,7 @@ async def domain_status(
 
     deadline = asyncio.get_event_loop().time() + max(wait, 0)
     polls = 0
+    nudged = False
     while True:
         polls += 1
         data = await _fetch_domains(ctx)
@@ -223,6 +224,24 @@ async def domain_status(
             ]
         summary["state"] = state
         summary["polls"] = polls
+
+        # Railway does not reliably re-check verification on its own: once
+        # DNS is in place, an explicit customDomainIssueCertificate nudge
+        # flips verified within seconds (proven on prim.eidosagi.com after
+        # 20+ stuck minutes). Fire it once per wait.
+        if (
+            wait > 0
+            and not nudged
+            and state == "pending"
+            and summary.get("verified") is False
+        ):
+            nudged = True
+            summary["nudged"] = True
+            await _gql(
+                ctx["token"],
+                "mutation($id: String!) { customDomainIssueCertificate(id: $id) }",
+                {"id": summary["id"]},
+            )
 
         if state != "pending" or asyncio.get_event_loop().time() >= deadline:
             if state == "pending" and wait > 0:
