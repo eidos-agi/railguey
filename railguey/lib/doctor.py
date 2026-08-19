@@ -178,6 +178,7 @@ async def _fetch_project_data(token: str, workspace: str) -> dict:
         instances = svc.get("serviceInstances", {}).get("edges", [])
 
         domains = []
+        custom_domains = []
         latest_deploy = None
         for inst in instances:
             node = inst.get("node", {})
@@ -189,10 +190,12 @@ async def _fetch_project_data(token: str, workspace: str) -> dict:
                 domains.append(d.get("domain"))
             for d in dom_data.get("customDomains", []):
                 domains.append(d.get("domain"))
+                custom_domains.append(d.get("domain"))
 
         services[svc_name] = {
             "id": svc_id,
             "domains": [d for d in domains if d],
+            "custom_domains": [d for d in custom_domains if d],
             "latest_deploy": latest_deploy,
         }
 
@@ -1148,6 +1151,52 @@ async def doctor_project_level(workspace: str) -> dict:
                 "message": "All services have at least one domain",
             }
         )
+
+    # 3b. Custom domain TLS — what does the edge ACTUALLY serve?
+    # The Railway API can report a cert issued while an edge still hands out
+    # the *.up.railway.app fallback. Handshake each custom domain and check
+    # the served cert covers it (prim.eidosagi.com, 2026-08-19).
+    all_custom = [
+        d for data in services.values() for d in data.get("custom_domains", [])
+    ]
+    if all_custom:
+        from .domains import edge_cert
+
+        max_score += 1
+        bad = []
+        expiring = []
+        for d in all_custom:
+            edge = await edge_cert(d)
+            if edge.get("error") or not edge.get("matches"):
+                bad.append(f"{d} (serves {edge.get('servedCN') or edge.get('error')})")
+            elif (edge.get("expiresInDays") or 999) < 14:
+                expiring.append(f"{d} ({edge['expiresInDays']}d left)")
+        if bad:
+            findings.append(
+                {
+                    "check": "Custom domain TLS",
+                    "status": "fail",
+                    "message": f"Edge cert mismatch: {'; '.join(bad)}",
+                    "fix": "railguey domain-status --wait (auto-nudges verification)",
+                }
+            )
+        elif expiring:
+            findings.append(
+                {
+                    "check": "Custom domain TLS",
+                    "status": "warn",
+                    "message": f"Cert expiring soon: {'; '.join(expiring)}",
+                }
+            )
+        else:
+            score += 1
+            findings.append(
+                {
+                    "check": "Custom domain TLS",
+                    "status": "pass",
+                    "message": f"Edge serves matching certs: {', '.join(all_custom)}",
+                }
+            )
 
     # 4. Deploy drift across all services
     max_score += 1

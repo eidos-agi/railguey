@@ -8,6 +8,9 @@ All queries run on the project token — no Bearer account token needed.
 """
 
 import asyncio
+import socket
+import ssl
+from datetime import datetime, timezone
 
 from .graphql import _gql, _resolve_project, _resolve_service_id
 from .token import _load_token
@@ -161,6 +164,60 @@ async def domains_list(workspace: str, service: str) -> dict:
     return {"service": service, "domains": out, "count": len(out)}
 
 
+def _name_covered(domain: str, name: str) -> bool:
+    """Does a cert subject/SAN entry cover this domain? Handles one-label wildcards."""
+    name = name.lower().rstrip(".")
+    domain = domain.lower().rstrip(".")
+    if name == domain:
+        return True
+    if name.startswith("*."):
+        return domain.split(".", 1)[-1] == name[2:] and "." in domain
+    return False
+
+
+def _edge_cert_sync(domain: str, timeout: float = 6.0) -> dict:
+    """What certificate does the edge ACTUALLY serve for this hostname?
+
+    Railway's API can say issued/verified while an edge still hands out the
+    *.up.railway.app fallback (seen live on prim.eidosagi.com, 2026-08-19:
+    curl got the real cert, a browser got the wildcard). Only a fresh TLS
+    handshake with SNI tells the truth.
+    """
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False  # we inspect coverage ourselves
+        with socket.create_connection((domain, 443), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=domain) as tls:
+                cert = tls.getpeercert() or {}
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    subject_cn = next(
+        (
+            str(v)
+            for rdn in cert.get("subject", ())
+            for k, v in rdn
+            if k == "commonName"
+        ),
+        "",
+    )
+    sans = [str(v) for t, v in cert.get("subjectAltName", ()) if t == "DNS"]
+    names = sans or ([subject_cn] if subject_cn else [])
+    expires = None
+    if cert.get("notAfter"):
+        not_after = datetime.strptime(str(cert["notAfter"]), "%b %d %H:%M:%S %Y %Z")
+        expires = (not_after.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).days
+    return {
+        "servedCN": subject_cn,
+        "sans": names,
+        "matches": any(_name_covered(domain, n) for n in names),
+        "expiresInDays": expires,
+    }
+
+
+async def edge_cert(domain: str) -> dict:
+    return await asyncio.to_thread(_edge_cert_sync, domain)
+
+
 def _cert_state(summary: dict) -> str:
     cert = summary.get("certificateStatus", "") or ""
     token = cert.replace("CERTIFICATE_STATUS_TYPE_", "")
@@ -215,6 +272,18 @@ async def domain_status(
         # Not verified => not live, whatever the cert enum says.
         if state == "issued" and summary.get("verified") is False:
             state = "pending"
+        # API "issued" is a claim; the edge handshake is the proof. An edge
+        # can keep serving the *.up.railway.app fallback after issuance.
+        if state == "issued":
+            edge = await edge_cert(summary["domain"])
+            summary["edge"] = edge
+            if edge.get("error") or not edge.get("matches"):
+                state = "pending"
+                summary["edgeAction"] = (
+                    f"edge serving {edge.get('servedCN') or edge.get('error')} "
+                    f"instead of a cert covering {summary['domain']} — "
+                    "cert issued but not attached at the edge yet"
+                )
         unsatisfied = [
             r for r in summary.get("dns_requirements", []) if not r["satisfied"]
         ]

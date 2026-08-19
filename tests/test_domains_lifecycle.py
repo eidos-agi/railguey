@@ -78,6 +78,14 @@ def _patch_gql(*responses):
     )
 
 
+
+def _patch_edge(matches=True):
+    return patch(
+        "railguey.lib.domains.edge_cert",
+        new_callable=AsyncMock,
+        return_value={"servedCN": "prim.example.com", "sans": ["prim.example.com"], "matches": matches, "expiresInDays": 89},
+    )
+
 def _domains_resp(customs, services):
     return {"domains": {"customDomains": customs, "serviceDomains": services}}
 
@@ -138,7 +146,7 @@ async def test_issued_cert_but_unverified_stays_pending():
 
 
 async def test_status_issued():
-    with _patch_ctx(), _patch_gql(_domains_resp([_CUSTOM_VALID], [])):
+    with _patch_ctx(), _patch_gql(_domains_resp([_CUSTOM_VALID], [])), _patch_edge():
         result = await domain_status(".", "web", domain_str="prim.example.com")
     assert result["state"] == "issued"
     assert "dnsAction" not in result
@@ -151,6 +159,7 @@ async def test_status_wait_polls_until_issued():
             _domains_resp([_CUSTOM_VALIDATING], []),
             _domains_resp([_CUSTOM_VALID], []),
         ),
+        _patch_edge(),
         patch("railguey.lib.domains.asyncio.sleep", new_callable=AsyncMock),
     ):
         result = await domain_status(".", "web", wait=60, interval=1)
@@ -217,6 +226,7 @@ async def test_wait_nudges_stuck_verification_once():
             {"customDomainIssueCertificate": True},
             _domains_resp([_CUSTOM_VALID], []),
         ) as mock_gql,
+        _patch_edge(),
         patch("railguey.lib.domains.asyncio.sleep", new_callable=AsyncMock),
     ):
         result = await domain_status(".", "web", wait=60, interval=1)
@@ -224,3 +234,53 @@ async def test_wait_nudges_stuck_verification_once():
     mutations = [c for c in mock_gql.call_args_list if "IssueCertificate" in c[0][1]]
     assert len(mutations) == 1
     assert mutations[0][0][2] == {"id": "cd-1"}
+
+
+def test_name_covered_wildcard_rules():
+    from railguey.lib.domains import _name_covered as c
+
+    assert c("prim.eidosagi.com", "prim.eidosagi.com")
+    assert c("prim.eidosagi.com", "*.eidosagi.com")
+    assert not c("prim.eidosagi.com", "*.up.railway.app")  # the fallback cert
+    assert not c("a.b.eidosagi.com", "*.eidosagi.com")  # wildcards are one label
+    assert not c("eidosagi.com", "*.eidosagi.com")
+
+
+async def test_issued_but_edge_serves_fallback_stays_pending():
+    """API says issued+verified but the edge hands out *.up.railway.app —
+    state must NOT report issued (a browser would see the wrong cert)."""
+    verified_valid = {
+        **_CUSTOM_VALID,
+        "status": {**_CUSTOM_VALID["status"], "verified": True},
+    }
+    with (
+        _patch_ctx(),
+        _patch_gql(_domains_resp([verified_valid], [])),
+        patch(
+            "railguey.lib.domains.edge_cert",
+            new_callable=AsyncMock,
+            return_value={"servedCN": "*.up.railway.app", "sans": ["*.up.railway.app"], "matches": False, "expiresInDays": 60},
+        ),
+    ):
+        result = await domain_status(".", "web")
+    assert result["state"] == "pending"
+    assert "edgeAction" in result
+
+
+async def test_issued_and_edge_matches_is_issued():
+    verified_valid = {
+        **_CUSTOM_VALID,
+        "status": {**_CUSTOM_VALID["status"], "verified": True},
+    }
+    with (
+        _patch_ctx(),
+        _patch_gql(_domains_resp([verified_valid], [])),
+        patch(
+            "railguey.lib.domains.edge_cert",
+            new_callable=AsyncMock,
+            return_value={"servedCN": "prim.example.com", "sans": ["prim.example.com"], "matches": True, "expiresInDays": 89},
+        ),
+    ):
+        result = await domain_status(".", "web")
+    assert result["state"] == "issued"
+    assert result["edge"]["matches"] is True
