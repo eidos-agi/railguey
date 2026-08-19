@@ -77,8 +77,12 @@ def _patch_gql(*responses):
 
 
 def _ok_proc(stdout: str = ""):
-    """Mimic subprocess.CompletedProcess with .stdout."""
-    return SimpleNamespace(stdout=stdout)
+    """Mimic subprocess.CompletedProcess with .stdout (exit 0).
+
+    returncode/stderr must exist: the migration gate fails CLOSED on
+    returncode != 0 (commit 5f75c91) and an AttributeError here silently
+    became a 'skip' — masking two tests for months."""
+    return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
 
 
 class _FakeHTTPXResponse:
