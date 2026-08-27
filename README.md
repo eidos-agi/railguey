@@ -17,6 +17,8 @@
 
 ---
 
+> **Cloud MCP** for Grok lives in [`eidos-agi/railguey-mcp-cloudflare`](https://github.com/eidos-agi/railguey-mcp-cloudflare). Same named-account model, hosted as a Cloudflare Worker so remote MCP clients can reach Railway without OAuth.
+
 **railguey is for teams and businesses that need reliable Railway deployments.** It is not the simplest way to deploy — Railway's built-in GitHub app is simpler. But railguey is more reliable, because it draws a cleaner engineering boundary.
 
 ## Why not just use Railway's GitHub App?
